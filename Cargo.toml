@@ -1,0 +1,16 @@
+[package]
+name = "hl-capture"
+version = "0.1.0"
+authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+libc = "0.2"
