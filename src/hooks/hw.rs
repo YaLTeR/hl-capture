@@ -1,39 +1,29 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+use error_chain::ChainedError;
 use libc::*;
+use std::sync::RwLock;
 
 use dl;
+use errors::*;
+use function::Function;
 
 lazy_static!{
-    static ref ORIG_RunListenServer: extern "C" fn(*mut c_void,
-                                                   *mut c_char,
-                                                   *mut c_char,
-                                                   *mut c_char,
-                                                   *mut c_void,
-                                                   *mut c_void) -> c_int = {
-        let ptr = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
-            .and_then(|h| h.sym("_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"))
-            .expect("error getting address of RunListenServer()");
+    static ref POINTERS: RwLock<Pointers> = RwLock::new(Pointers::default());
+}
 
-        unsafe { *(&ptr as *const _ as *const _) }
-    };
+#[derive(Debug, Default)]
+struct Pointers {
+    RunListenServer: Function<extern "C" fn(*mut c_void,
+                                            *mut c_char,
+                                            *mut c_char,
+                                            *mut c_char,
+                                            *mut c_void,
+                                            *mut c_void) -> c_int>,
 
-    static ref ORIG_Host_Init: extern "C" fn(*mut c_void) -> c_int = {
-        let ptr = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
-            .and_then(|h| h.sym("Host_Init"))
-            .expect("error getting address of Host_Init()");
-
-        unsafe { *(&ptr as *const _ as *const _) }
-    };
-
-    static ref ORIG_Con_Printf: extern "C" fn(*const c_char) = {
-        let ptr = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
-            .and_then(|h| h.sym("Con_Printf"))
-            .expect("error getting address of Con_Printf()");
-
-        unsafe { *(&ptr as *const _ as *const _) }
-    };
+    Host_Init: Function<extern "C" fn(*mut c_void) -> c_int>,
+    Con_Printf: Function<extern "C" fn(*const c_char)>,
 }
 
 /// This is the "main" function of hw.so, called inside CEngineAPI::Run.
@@ -47,26 +37,54 @@ pub extern "C" fn _Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_(inst
                                                                             postRestartCmdLineArgs: *mut c_char,
                                                                             launcherFactory: *mut c_void,
                                                                             filesystemFactory: *mut c_void) -> c_int {
-    refresh_pointers();
+    // hw.so just loaded, either for the first time or potentially at a different address.
+    // Refresh all pointers.
+    if let Err(ref e) = refresh_pointers().chain_err(|| "error refreshing pointers") {
+        panic!("{}", e.display());
+    }
 
-    let rv = ORIG_RunListenServer(instance,
-                                  basedir,
-                                  cmdline,
-                                  postRestartCmdLineArgs,
-                                  launcherFactory,
-                                  filesystemFactory);
+    let rv = real!(RunListenServer)(instance,
+                                    basedir,
+                                    cmdline,
+                                    postRestartCmdLineArgs,
+                                    launcherFactory,
+                                    filesystemFactory);
+
+    // Since hw.so is getting unloaded, reset all pointers.
+    reset_pointers();
 
     rv
 }
 
 #[no_mangle]
 pub extern "C" fn Host_Init(parms: *mut c_void) -> c_int {
-    let rv = ORIG_Host_Init(parms);
-    ORIG_Con_Printf(cstr!(b"Hello world!\0"));
+    let rv = real!(Host_Init)(parms);
+
+    real!(Con_Printf)(cstr!(b"Hello world!\0"));
+
     rv
 }
 
 /// Open hw.so, then get and store all necessary function and variable addresses.
-fn refresh_pointers() {
+fn refresh_pointers() -> Result<()> {
     println!("refresh_pointers()");
+
+    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).chain_err(|| "couldn't load hw.so")?;
+
+    let mut pointers = POINTERS.write().unwrap();
+
+    unsafe {
+        find!(pointers, hw, RunListenServer, "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_");
+        find!(pointers, hw, Host_Init, "Host_Init");
+        find!(pointers, hw, Con_Printf, "Con_Printf");
+    }
+
+    Ok(())
+}
+
+/// Reset all pointers to their default values.
+fn reset_pointers() {
+    println!("reset_pointers()");
+
+    *POINTERS.write().unwrap() = Pointers::default();
 }

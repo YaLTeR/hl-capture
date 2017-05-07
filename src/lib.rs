@@ -14,6 +14,7 @@ mod errors {
 #[macro_use]
 mod macros;
 mod dl;
+mod function;
 mod hooks {
     pub mod hw;
 }
