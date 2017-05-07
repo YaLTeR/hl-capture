@@ -56,6 +56,8 @@ pub extern "C" fn _Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_(inst
     rv
 }
 
+/// In this function hw.so initializes most of its systems.
+/// This includes registering console commands and variables.
 #[no_mangle]
 pub extern "C" fn Host_Init(parms: *mut c_void) -> c_int {
     let rv = real!(Host_Init)(parms);
