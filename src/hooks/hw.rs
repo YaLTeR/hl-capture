@@ -26,7 +26,7 @@ struct Pointers {
     Con_Printf: Function<extern "C" fn(*const c_char)>,
 }
 
-/// This is the "main" function of hw.so, called inside CEngineAPI::Run.
+/// This is the "main" function of hw.so, called inside CEngineAPI::Run().
 /// The game runs within this function and shortly after it exits hw.so is unloaded.
 /// Note: _restart also causes this function to exit, in this case the launcher
 /// unloads and reloads hw.so and this function is called again as if it was a fresh start.
