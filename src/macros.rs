@@ -23,11 +23,12 @@ macro_rules! command {
         struct $name;
 
         impl $name {
-            extern "C" fn callback() {
+            // This will get called by the engine, in main game thread.
+            unsafe extern "C" fn callback() {
                 const F: &Fn(::engine::Engine) = &$callback;
 
                 // We know this is the main game thread.
-                let engine = unsafe { ::engine::Engine::new() };
+                let engine = ::engine::Engine::new();
 
                 F(engine);
             }
@@ -53,7 +54,7 @@ macro_rules! command {
                 NAME.as_bytes_with_nul()
             }
 
-            fn callback(&self) -> extern "C" fn() {
+            fn callback(&self) -> unsafe extern "C" fn() {
                 Self::callback
             }
         }

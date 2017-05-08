@@ -112,7 +112,7 @@ unsafe fn register_cvars_and_commands() {
 
 /// Register a console command.
 /// Unsafe because it should only be called from the main game thread.
-unsafe fn register_command(name: &'static [u8], callback: extern "C" fn()) {
+unsafe fn register_command(name: &'static [u8], callback: unsafe extern "C" fn()) {
     real!(Cmd_AddCommand)(name as *const _ as *const _, callback as *mut c_void);
 }
 

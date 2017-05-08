@@ -47,5 +47,5 @@ impl<'a> ExactSizeIterator for Args<'a> {}
 
 pub trait Command: Send + Sync {
     fn name(&self) -> &'static [u8];
-    fn callback(&self) -> extern "C" fn();
+    fn callback(&self) -> unsafe extern "C" fn();
 }
