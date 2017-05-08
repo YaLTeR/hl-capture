@@ -18,7 +18,7 @@ macro_rules! find {
 }
 
 macro_rules! command {
-    ($name:ident, $command:tt, $callback:expr) => (
+    ($name:ident, $callback:expr) => (
         #[allow(non_camel_case_types)]
         struct $name;
 
@@ -44,7 +44,13 @@ macro_rules! command {
 
         impl ::command::Command for $name {
             fn name(&self) -> &'static [u8] {
-                $command
+                lazy_static! {
+                    static ref NAME: ::std::ffi::CString = {
+                        ::std::ffi::CString::new(stringify!($name)).unwrap()
+                    };
+                }
+
+                NAME.as_bytes_with_nul()
             }
 
             fn callback(&self) -> extern "C" fn() {

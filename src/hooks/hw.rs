@@ -144,7 +144,7 @@ pub unsafe fn cmd_argv(index: u32) -> String {
     string
 }
 
-command!(cap_test, b"cap_test\0", |engine| {
+command!(cap_test, |engine| {
     let args = engine.args();
 
     let mut buf = String::new();
@@ -158,6 +158,6 @@ command!(cap_test, b"cap_test\0", |engine| {
     engine.con_print(&buf);
 });
 
-command!(cap_another_test, b"cap_another_test\0", |engine| {
+command!(cap_another_test, |engine| {
     engine.con_print("Hello! %s %d %\n");
 });
