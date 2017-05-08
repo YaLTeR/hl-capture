@@ -34,10 +34,11 @@ macro_rules! command {
             }
 
             // This will be called at .so init time. Add this command to the global list.
+            // It shouldn't be called otherwise.
             #[allow(dead_code)]
-            extern "C" fn initialize() {
+            extern "C" fn __initialize() {
                 #[link_section=".init_array"]
-                static INITIALIZE: extern "C" fn() = $name::initialize;
+                static INITIALIZE: extern "C" fn() = $name::__initialize;
 
                 ::command::COMMANDS.write().unwrap().push(Box::new($name));
             }
