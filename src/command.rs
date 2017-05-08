@@ -1,3 +1,5 @@
+use libc::*;
+use std::ffi::CStr;
 use std::sync::RwLock;
 
 lazy_static! {
@@ -5,12 +7,14 @@ lazy_static! {
 }
 
 pub struct Args {
+    count: usize,
     index: usize,
 }
 
 impl Args {
     fn new() -> Self {
         Self {
+            count: real!(Cmd_Argc)() as usize,
             index: 0,
         }
     }
@@ -20,11 +24,19 @@ impl Iterator for Args {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
-        None
+        if self.index == self.count {
+            None
+        } else {
+            let arg = real!(Cmd_Argv)(self.index as c_int);
+            self.index += 1;
+
+            let string = unsafe { CStr::from_ptr(arg).to_string_lossy().into_owned() };
+            Some(string)
+        }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(0))
+        (self.count - self.index, Some(self.count - self.index))
     }
 }
 
