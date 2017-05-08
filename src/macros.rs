@@ -10,7 +10,7 @@ macro_rules! real {
 }
 
 macro_rules! find {
-    ($pointers:ident, $handle:ident, $f:ident, $symbol:tt) => ({
+    ($pointers:expr, $handle:expr, $f:ident, $symbol:tt) => ({
         let ptr = $handle.sym($symbol)
             .chain_err(|| concat!("couldn't find ", stringify!($f), "()"))?;
         $pointers.$f.set_from_raw(ptr);
