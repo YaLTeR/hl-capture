@@ -4,7 +4,7 @@ macro_rules! cstr {
 
 macro_rules! real {
     ($f:ident) => ({
-        let func = POINTERS.read().unwrap().$f.get();
+        let func = ::hooks::hw::POINTERS.read().unwrap().$f.get();
         func
     })
 }
