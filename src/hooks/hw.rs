@@ -38,7 +38,7 @@ pub struct Pointers {
 /// Note: _restart also causes this function to exit, in this case the launcher
 /// unloads and reloads hw.so and this function is called again as if it was a fresh start.
 #[export_name = "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"]
-pub extern "C" fn RunListenServer(instance: *mut c_void,
+pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                   basedir: *mut c_char,
                                   cmdline: *mut c_char,
                                   postRestartCmdLineArgs: *mut c_char,
@@ -51,14 +51,12 @@ pub extern "C" fn RunListenServer(instance: *mut c_void,
         panic!("{}", e.display());
     }
 
-    let rv = unsafe {
-        real!(RunListenServer)(instance,
-                               basedir,
-                               cmdline,
-                               postRestartCmdLineArgs,
-                               launcherFactory,
-                               filesystemFactory)
-    };
+    let rv = real!(RunListenServer)(instance,
+                                    basedir,
+                                    cmdline,
+                                    postRestartCmdLineArgs,
+                                    launcherFactory,
+                                    filesystemFactory);
 
     // Since hw.so is getting unloaded, reset all pointers.
     reset_pointers();
@@ -69,12 +67,10 @@ pub extern "C" fn RunListenServer(instance: *mut c_void,
 /// This function initializes the hunk memory.
 /// After the hunk memory is initialized we can register console commands and variables.
 #[no_mangle]
-pub extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
-    let rv = unsafe { real!(Memory_Init)(buf, size) };
+pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
+    let rv = real!(Memory_Init)(buf, size);
 
-    unsafe {
-        register_cvars_and_commands();
-    }
+    register_cvars_and_commands();
 
     rv
 }
