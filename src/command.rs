@@ -1,49 +1,49 @@
-use libc::*;
-use std::ffi::CStr;
 use std::sync::RwLock;
+
+use engine;
 
 lazy_static! {
     pub static ref COMMANDS: RwLock<Vec<Box<Command>>> = RwLock::new(Vec::new());
 }
 
-pub struct Args {
-    count: usize,
-    index: usize,
+/// An iterator over the console command arguments.
+pub struct Args<'a> {
+    count: u32,
+    index: u32,
+
+    /// Engine functions.
+    engine: &'a engine::Engine,
 }
 
-impl Args {
-    fn new() -> Self {
+impl<'a> Args<'a> {
+    pub fn new(engine: &'a engine::Engine) -> Self {
         Self {
-            count: real!(Cmd_Argc)() as usize,
+            count: engine.cmd_argc(),
             index: 0,
+            engine: engine,
         }
     }
 }
 
-impl Iterator for Args {
+impl<'a> Iterator for Args<'a> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index == self.count {
             None
         } else {
-            let arg = real!(Cmd_Argv)(self.index as c_int);
+            let arg = self.engine.cmd_argv(self.index);
             self.index += 1;
-
-            let string = unsafe { CStr::from_ptr(arg).to_string_lossy().into_owned() };
-            Some(string)
+            Some(arg)
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.count - self.index, Some(self.count - self.index))
+        ((self.count - self.index) as usize, Some((self.count - self.index) as usize))
     }
 }
 
-impl ExactSizeIterator for Args {}
-
-pub type ArgsMaker = Fn() -> Args;
-pub const MAKE_ARGS: &ArgsMaker = &|| Args::new();
+impl<'a> ExactSizeIterator for Args<'a> {}
 
 pub trait Command: Send + Sync {
     fn name(&self) -> &'static [u8];

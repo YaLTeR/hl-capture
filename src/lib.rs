@@ -15,6 +15,7 @@ mod errors {
 mod macros;
 mod command;
 mod dl;
+mod engine;
 mod function;
 mod hooks {
     pub mod hw;

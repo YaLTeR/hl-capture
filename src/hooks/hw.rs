@@ -3,7 +3,8 @@
 
 use error_chain::ChainedError;
 use libc::*;
-use std::ffi::CString;
+use std::cmp;
+use std::ffi::{CStr, CString};
 use std::sync::RwLock;
 
 use command;
@@ -17,19 +18,19 @@ lazy_static!{
 
 #[derive(Debug, Default)]
 pub struct Pointers {
-    RunListenServer: Function<extern "C" fn(*mut c_void,
-                                            *mut c_char,
-                                            *mut c_char,
-                                            *mut c_char,
-                                            *mut c_void,
-                                            *mut c_void)
-                                            -> c_int>,
+    RunListenServer: Function<unsafe extern "C" fn(*mut c_void,
+                                                   *mut c_char,
+                                                   *mut c_char,
+                                                   *mut c_char,
+                                                   *mut c_void,
+                                                   *mut c_void)
+                                                   -> c_int>,
 
-    Cmd_AddCommand: Function<extern "C" fn(*const c_char, *mut c_void)>,
-    pub Cmd_Argc: Function<extern "C" fn() -> c_int>,
-    pub Cmd_Argv: Function<extern "C" fn(c_int) -> *const c_char>,
-    Con_Printf: Function<extern "C" fn(*const c_char)>,
-    Memory_Init: Function<extern "C" fn(*mut c_void, c_int)>,
+    Cmd_AddCommand: Function<unsafe extern "C" fn(*const c_char, *mut c_void)>,
+    Cmd_Argc: Function<unsafe extern "C" fn() -> c_int>,
+    Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
+    Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
+    Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
 }
 
 /// This is the "main" function of hw.so, called inside CEngineAPI::Run().
@@ -50,12 +51,14 @@ pub extern "C" fn RunListenServer(instance: *mut c_void,
         panic!("{}", e.display());
     }
 
-    let rv = real!(RunListenServer)(instance,
-                                    basedir,
-                                    cmdline,
-                                    postRestartCmdLineArgs,
-                                    launcherFactory,
-                                    filesystemFactory);
+    let rv = unsafe {
+        real!(RunListenServer)(instance,
+                               basedir,
+                               cmdline,
+                               postRestartCmdLineArgs,
+                               launcherFactory,
+                               filesystemFactory)
+    };
 
     // Since hw.so is getting unloaded, reset all pointers.
     reset_pointers();
@@ -67,9 +70,11 @@ pub extern "C" fn RunListenServer(instance: *mut c_void,
 /// After the hunk memory is initialized we can register console commands and variables.
 #[no_mangle]
 pub extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
-    let rv = real!(Memory_Init)(buf, size);
+    let rv = unsafe { real!(Memory_Init)(buf, size) };
 
-    register_cvars_and_commands();
+    unsafe {
+        register_cvars_and_commands();
+    }
 
     rv
 }
@@ -102,36 +107,57 @@ fn reset_pointers() {
 }
 
 /// Register console commands and variables.
-fn register_cvars_and_commands() {
+/// Unsafe because it should only be called from the main game thread.
+unsafe fn register_cvars_and_commands() {
     for cmd in command::COMMANDS.read().unwrap().iter() {
         register_command(cmd.name(), cmd.callback());
     }
 }
 
-fn register_command(name: &'static [u8], callback: extern "C" fn()) {
+/// Register a console command.
+/// Unsafe because it should only be called from the main game thread.
+unsafe fn register_command(name: &'static [u8], callback: extern "C" fn()) {
     real!(Cmd_AddCommand)(name as *const _ as *const _, callback as *mut c_void);
 }
 
-fn con_printf(string: &str) {
+/// Print the given string to the game console. String must not contain null bytes.
+/// Unsafe because it should only be called from the main game thread.
+pub unsafe fn con_print(string: &str) {
     real!(Con_Printf)(CString::new(string.replace('%', "%%"))
                           .expect("string cannot contain null bytes")
-                          .as_ptr());
+                          .as_ptr())
 }
 
-command!(cap_test, b"cap_test\0", |args| {
-    let a = args();
+/// Get the console command argument count.
+/// Unsafe because it should only be called from the main game thread.
+pub unsafe fn cmd_argc() -> u32 {
+    let argc = real!(Cmd_Argc)();
+    cmp::max(0, argc) as u32
+}
+
+/// Get a console command argument.
+/// Unsafe because it should only be called from the main game thread.
+pub unsafe fn cmd_argv(index: u32) -> String {
+    let index = cmp::min(index, i32::max_value() as u32) as i32;
+    let arg = real!(Cmd_Argv)(index);
+    let string = CStr::from_ptr(arg).to_string_lossy().into_owned();
+    string
+}
+
+command!(cap_test, b"cap_test\0", |engine| {
+    let args = engine.args();
 
     let mut buf = String::new();
-    buf.push_str(&format!("Args len: {}\n", a.len()));
+    buf.push_str(&format!("Args len: {}\n", args.len()));
 
-    for arg in a {
+    for arg in args {
         buf.push_str(&arg);
         buf.push('\n');
     }
 
-    con_printf(&buf);
+    engine.con_print(&buf);
 });
 
-command!(cap_another_test, b"cap_another_test\0", |_args| {
-    con_printf("Hello! %s %d %\n");
+command!(cap_another_test, b"cap_another_test\0", |engine| {
+    engine.con_print("Hello! %s %d %\n");
 });

@@ -11,8 +11,9 @@ macro_rules! real {
 
 macro_rules! find {
     ($pointers:ident, $handle:ident, $f:ident, $symbol:tt) => ({
-        $pointers.$f.set_from_raw($handle.sym($symbol)
-                                         .chain_err(|| concat!("couldn't find ", stringify!($f), "()"))?);
+        let ptr = $handle.sym($symbol)
+            .chain_err(|| concat!("couldn't find ", stringify!($f), "()"))?;
+        $pointers.$f.set_from_raw(ptr);
     })
 }
 
@@ -23,10 +24,15 @@ macro_rules! command {
 
         impl $name {
             extern "C" fn callback() {
-                const F: &Fn(&::command::ArgsMaker) = &$callback;
-                F(::command::MAKE_ARGS);
+                const F: &Fn(::engine::Engine) = &$callback;
+
+                // We know this is the main game thread.
+                let engine = unsafe { ::engine::Engine::new() };
+
+                F(engine);
             }
 
+            // This will be called at .so init time. Add this command to the global list.
             #[allow(dead_code)]
             extern "C" fn initialize() {
                 #[link_section=".init_array"]
@@ -67,7 +73,7 @@ macro_rules! gen_function_impls {
             }
 
             #[inline(always)]
-            pub fn call(&self $(, $arg_name : $arg_type)*) -> R {
+            pub unsafe fn call(&self $(, $arg_name : $arg_type)*) -> R {
                 (self.ptr)($($arg_name),*)
             }
 
@@ -94,10 +100,10 @@ macro_rules! gen_function_impls {
     );
 
     (@gen_impls $($arg_name:ident : $arg_type:ident),*) => (
-        gen_function_impls!(@make_impl (                 ) ($($arg_name : $arg_type),*));
-        gen_function_impls!(@make_impl (extern "C"       ) ($($arg_name : $arg_type),*));
-        gen_function_impls!(@make_impl (extern "system"  ) ($($arg_name : $arg_type),*));
-        gen_function_impls!(@make_impl (extern "fastcall") ($($arg_name : $arg_type),*));
+        gen_function_impls!(@make_impl (unsafe                  ) ($($arg_name : $arg_type),*));
+        gen_function_impls!(@make_impl (unsafe extern "C"       ) ($($arg_name : $arg_type),*));
+        gen_function_impls!(@make_impl (unsafe extern "system"  ) ($($arg_name : $arg_type),*));
+        gen_function_impls!(@make_impl (unsafe extern "fastcall") ($($arg_name : $arg_type),*));
     );
 
     () => (
