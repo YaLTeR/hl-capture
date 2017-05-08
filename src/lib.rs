@@ -13,11 +13,12 @@ mod errors {
 }
 #[macro_use]
 mod macros;
+mod command;
 mod dl;
 mod function;
 mod hooks {
     pub mod hw;
 }
 
-pub use self::hooks::hw::_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_;
-pub use self::hooks::hw::Host_Init;
+pub use self::hooks::hw::RunListenServer;
+pub use self::hooks::hw::Memory_Init;

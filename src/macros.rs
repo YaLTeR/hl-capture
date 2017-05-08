@@ -16,6 +16,38 @@ macro_rules! find {
     })
 }
 
+macro_rules! command {
+    ($name:ident, $command:tt, $callback:expr) => (
+        #[allow(non_camel_case_types)]
+        struct $name;
+
+        impl $name {
+            extern "C" fn callback() {
+                const F: &Fn(&::command::ArgsMaker) = &$callback;
+                F(::command::MAKE_ARGS);
+            }
+
+            #[allow(dead_code)]
+            extern "C" fn initialize() {
+                #[link_section=".init_array"]
+                static INITIALIZE: extern "C" fn() = $name::initialize;
+
+                ::command::COMMANDS.write().unwrap().push(Box::new($name));
+            }
+        }
+
+        impl ::command::Command for $name {
+            fn name(&self) -> &'static [u8] {
+                $command
+            }
+
+            fn callback(&self) -> extern "C" fn() {
+                Self::callback
+            }
+        }
+    )
+}
+
 macro_rules! gen_function_impls {
     (@make_impl ($($extern_type:tt)*) ($($arg_name:ident : $arg_type:ident),*)) => (
         impl<R $(, $arg_type)*> Default for Function<$($extern_type)* fn($($arg_type),*) -> R> {
