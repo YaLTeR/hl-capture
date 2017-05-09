@@ -26,6 +26,8 @@ pub struct PixelFormats {
 }
 
 pub struct Context {
+    // The Codec which was used to initialize this Context.
+    codec: Codec,
     ptr: *mut ffmpeg_sys::AVCodecContext,
 }
 
@@ -92,7 +94,10 @@ impl Codec {
 
         ensure!(!ptr.is_null(), "unable to allocate the codec context");
 
-        Ok(Context { ptr })
+        Ok(Context {
+            codec: self,
+            ptr,
+        })
     }
 }
 
