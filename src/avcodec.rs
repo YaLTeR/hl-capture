@@ -175,6 +175,20 @@ impl Context {
         }
     }
 
+    #[inline]
+    pub fn pixel_format(&self) -> ffmpeg_sys::AVPixelFormat {
+        unsafe {
+            (*self.ptr).pix_fmt
+        }
+    }
+
+    #[inline]
+    pub fn set_pixel_format(&mut self, pixel_format: ffmpeg_sys::AVPixelFormat) {
+        unsafe {
+            (*self.ptr).pix_fmt = pixel_format;
+        }
+    }
+
     pub fn open(self) -> Result<OpenContext> {
         let rv = unsafe {
             ffmpeg_sys::avcodec_open2(self.ptr, self.codec.ptr, ptr::null_mut())

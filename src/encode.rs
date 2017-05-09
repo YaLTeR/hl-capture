@@ -1,4 +1,5 @@
 use error_chain::ChainedError;
+use ffmpeg_sys;
 use std::sync::RwLock;
 
 use avcodec;
@@ -85,6 +86,7 @@ fn test_video_output() -> Result<()> {
     context.set_width(640);
     context.set_height(360);
     context.set_time_base(&(1, 60).into());
+    context.set_pixel_format(ffmpeg_sys::AVPixelFormat::AV_PIX_FMT_YUV420P);
 
     // Get ready for encoding.
     let context = context.open();
