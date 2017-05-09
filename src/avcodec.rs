@@ -6,10 +6,9 @@ use std::ffi::{ CStr, CString };
 use errors::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C)]
 pub struct Rational {
-    pub numerator: c_int,
-    pub denominator: c_int,
+    pub numerator: i32,
+    pub denominator: i32,
 }
 
 #[derive(Clone, Copy)]
@@ -34,6 +33,24 @@ impl From<(i32, i32)> for Rational {
         Self {
             numerator,
             denominator,
+        }
+    }
+}
+
+impl From<ffmpeg_sys::AVRational> for Rational {
+    fn from(rational: ffmpeg_sys::AVRational) -> Self {
+        Self {
+            numerator: rational.num,
+            denominator: rational.den,
+        }
+    }
+}
+
+impl From<Rational> for ffmpeg_sys::AVRational {
+    fn from(rational: Rational) -> Self {
+        Self {
+            num: rational.numerator,
+            den: rational.denominator,
         }
     }
 }
