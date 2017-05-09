@@ -17,28 +17,28 @@ pub struct PixelFormats {
 }
 
 impl Codec {
-    pub fn description(&self) -> String {
+    pub fn description(self) -> String {
         unsafe {
             CStr::from_ptr((*self.ptr).long_name).to_string_lossy().into_owned()
         }
     }
 
-    pub fn kind(&self) -> ffmpeg_sys::AVMediaType {
+    pub fn kind(self) -> ffmpeg_sys::AVMediaType {
         unsafe {
             (*self.ptr).kind
         }
     }
 
-    pub fn is_video(&self) -> bool {
+    pub fn is_video(self) -> bool {
         self.kind() == ffmpeg_sys::AVMediaType::AVMEDIA_TYPE_VIDEO
     }
 
-    pub fn pixel_formats(&self) -> Option<PixelFormats> {
+    pub fn pixel_formats(self) -> Option<PixelFormats> {
         unsafe {
             if (*self.ptr).pix_fmts.is_null() {
                 None
             } else {
-                Some(PixelFormats::new(*self))
+                Some(PixelFormats::new(self))
             }
         }
     }
