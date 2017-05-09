@@ -14,6 +14,7 @@ mod errors {
 }
 #[macro_use]
 mod macros;
+mod avcodec;
 mod command;
 mod dl;
 mod encode;
