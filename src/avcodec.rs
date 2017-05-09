@@ -63,12 +63,14 @@ impl Codec {
         }
     }
 
+    #[inline]
     pub fn kind(self) -> ffmpeg_sys::AVMediaType {
         unsafe {
             (*self.ptr).kind
         }
     }
 
+    #[inline]
     pub fn is_video(self) -> bool {
         self.kind() == ffmpeg_sys::AVMediaType::AVMEDIA_TYPE_VIDEO
     }
@@ -121,36 +123,42 @@ impl Iterator for PixelFormats {
 }
 
 impl Context {
+    #[inline]
     pub fn width(&self) -> u32 {
         unsafe {
             cmp::max(0, (*self.ptr).width) as u32
         }
     }
 
+    #[inline]
     pub fn set_width(&mut self, width: u32) {
         unsafe {
             (*self.ptr).width = cmp::min(width, c_int::max_value() as u32) as c_int;
         }
     }
 
+    #[inline]
     pub fn height(&self) -> u32 {
         unsafe {
             cmp::max(0, (*self.ptr).height) as u32
         }
     }
 
+    #[inline]
     pub fn set_height(&mut self, height: u32) {
         unsafe {
             (*self.ptr).height = cmp::min(height, c_int::max_value() as u32) as c_int;
         }
     }
 
+    #[inline]
     pub fn time_base(&self) -> Rational {
         unsafe {
             (*self.ptr).time_base.into()
         }
     }
 
+    #[inline]
     pub fn set_time_base(&mut self, time_base: &Rational) {
         unsafe {
             (*self.ptr).time_base = (*time_base).into();
