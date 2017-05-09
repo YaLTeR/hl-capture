@@ -79,8 +79,11 @@ fn test_video_output() -> Result<()> {
     ensure!(codec.is_some(), "codec is None");
     let codec = codec.unwrap();
 
-    let context = codec.context()
+    let mut context = codec.context()
         .chain_err(|| "unable to get the codec context")?;
+
+    context.set_width(640);
+    context.set_height(360);
 
     Ok(())
 }

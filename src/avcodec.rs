@@ -1,4 +1,6 @@
 use ffmpeg_sys;
+use libc::*;
+use std::cmp;
 use std::ffi::{ CStr, CString };
 
 use errors::*;
@@ -80,6 +82,32 @@ impl Iterator for PixelFormats {
         } else {
             self.index += 1;
             Some(format)
+        }
+    }
+}
+
+impl Context {
+    pub fn width(&self) -> u32 {
+        unsafe {
+            cmp::max(0, (*self.ptr).width) as u32
+        }
+    }
+
+    pub fn set_width(&mut self, width: u32) {
+        unsafe {
+            (*self.ptr).width = cmp::min(width, c_int::max_value() as u32) as c_int;
+        }
+    }
+
+    pub fn height(&self) -> u32 {
+        unsafe {
+            cmp::max(0, (*self.ptr).height) as u32
+        }
+    }
+
+    pub fn set_height(&mut self, height: u32) {
+        unsafe {
+            (*self.ptr).height = cmp::min(height, c_int::max_value() as u32) as c_int;
         }
     }
 }
