@@ -3,6 +3,7 @@ use libc::*;
 use std::cmp;
 use std::ffi::{ CStr, CString };
 use std::ops::Deref;
+use std::ptr;
 
 use errors::*;
 
@@ -29,6 +30,10 @@ pub struct Context {
     // The Codec which was used to initialize this Context.
     codec: Codec,
     ptr: *mut ffmpeg_sys::AVCodecContext,
+}
+
+pub struct OpenContext {
+    context: Context,
 }
 
 impl From<(i32, i32)> for Rational {
@@ -168,6 +173,16 @@ impl Context {
         unsafe {
             (*self.ptr).time_base = (*time_base).into();
         }
+    }
+
+    pub fn open(self) -> Result<OpenContext> {
+        let rv = unsafe {
+            ffmpeg_sys::avcodec_open2(self.ptr, self.codec.ptr, ptr::null_mut())
+        };
+
+        ensure!(rv == 0, "error opening context");
+
+        Ok(OpenContext { context: self })
     }
 }
 

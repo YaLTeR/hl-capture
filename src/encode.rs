@@ -86,5 +86,8 @@ fn test_video_output() -> Result<()> {
     context.set_height(360);
     context.set_time_base(&(1, 60).into());
 
+    // Get ready for encoding.
+    let context = context.open();
+
     Ok(())
 }
