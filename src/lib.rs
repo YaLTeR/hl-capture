@@ -3,8 +3,7 @@
 
 #[macro_use]
 extern crate error_chain;
-#[macro_use]
-extern crate ffmpeg;
+extern crate ffmpeg_sys;
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;
