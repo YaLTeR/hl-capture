@@ -2,10 +2,11 @@ use ffmpeg_sys;
 use libc::*;
 use std::cmp;
 use std::ffi::{ CStr, CString };
+use std::ops::Deref;
 
 use errors::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rational {
     pub numerator: i32,
     pub denominator: i32,
@@ -141,6 +142,18 @@ impl Context {
     pub fn set_height(&mut self, height: u32) {
         unsafe {
             (*self.ptr).height = cmp::min(height, c_int::max_value() as u32) as c_int;
+        }
+    }
+
+    pub fn time_base(&self) -> Rational {
+        unsafe {
+            (*self.ptr).time_base.into()
+        }
+    }
+
+    pub fn set_time_base(&mut self, time_base: &Rational) {
+        unsafe {
+            (*self.ptr).time_base = (*time_base).into();
         }
     }
 }

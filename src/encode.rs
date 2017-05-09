@@ -84,6 +84,7 @@ fn test_video_output() -> Result<()> {
 
     context.set_width(640);
     context.set_height(360);
+    context.set_time_base(&(1, 60).into());
 
     Ok(())
 }
