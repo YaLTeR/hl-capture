@@ -3,6 +3,7 @@ use std::ffi::{ CStr, CString };
 
 use errors::*;
 
+#[derive(Clone, Copy)]
 pub struct Codec {
     ptr: *mut ffmpeg_sys::AVCodec,
 }
@@ -10,8 +11,8 @@ pub struct Codec {
 unsafe impl Send for Codec {}
 unsafe impl Sync for Codec {}
 
-pub struct PixelFormats<'a> {
-    codec: &'a Codec,
+pub struct PixelFormats {
+    codec: Codec,
     index: isize,
 }
 
@@ -32,19 +33,19 @@ impl Codec {
         self.kind() == ffmpeg_sys::AVMediaType::AVMEDIA_TYPE_VIDEO
     }
 
-    pub fn pixel_formats<'a>(&'a self) -> Option<PixelFormats<'a>> {
+    pub fn pixel_formats(&self) -> Option<PixelFormats> {
         unsafe {
             if (*self.ptr).pix_fmts.is_null() {
                 None
             } else {
-                Some(PixelFormats::new(&self))
+                Some(PixelFormats::new(*self))
             }
         }
     }
 }
 
-impl<'a> PixelFormats<'a> {
-    fn new(codec: &'a Codec) -> Self {
+impl PixelFormats {
+    fn new(codec: Codec) -> Self {
         Self {
             codec,
             index: 0,
@@ -52,7 +53,7 @@ impl<'a> PixelFormats<'a> {
     }
 }
 
-impl<'a> Iterator for PixelFormats<'a> {
+impl Iterator for PixelFormats {
     type Item = ffmpeg_sys::AVPixelFormat;
 
     fn next(&mut self) -> Option<Self::Item> {
