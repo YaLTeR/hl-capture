@@ -65,9 +65,22 @@ command!(cap_set_video_encoder, |engine| {
     }
 });
 
-//command!(cap_test_video_output, |engine| {
-//});
+command!(cap_test_video_output, |engine| {
+    if let Err(ref e) = test_video_output() {
+        engine.con_print(&format!("{}", e.display()));
+        return;
+    }
 
-//fn test_video_output() -> Result<()> {
-//    Ok(())
-//}
+    engine.con_print("Done!\n");
+});
+
+fn test_video_output() -> Result<()> {
+    let codec = *VIDEO_ENCODER.read().unwrap();
+    ensure!(codec.is_some(), "codec is None");
+    let codec = codec.unwrap();
+
+    let context = codec.context()
+        .chain_err(|| "unable to get the codec context")?;
+
+    Ok(())
+}

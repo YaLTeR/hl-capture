@@ -16,6 +16,10 @@ pub struct PixelFormats {
     index: isize,
 }
 
+pub struct Context {
+    ptr: *mut ffmpeg_sys::AVCodecContext,
+}
+
 impl Codec {
     pub fn description(self) -> String {
         unsafe {
@@ -42,6 +46,16 @@ impl Codec {
             }
         }
     }
+
+    pub fn context(self) -> Result<Context> {
+        let ptr = unsafe {
+            ffmpeg_sys::avcodec_alloc_context3(self.ptr)
+        };
+
+        ensure!(!ptr.is_null(), "unable to allocate the codec context");
+
+        Ok(Context { ptr })
+    }
 }
 
 impl PixelFormats {
@@ -66,6 +80,14 @@ impl Iterator for PixelFormats {
         } else {
             self.index += 1;
             Some(format)
+        }
+    }
+}
+
+impl Drop for Context {
+    fn drop(&mut self) {
+        unsafe {
+            ffmpeg_sys::avcodec_free_context(&mut self.ptr);
         }
     }
 }
