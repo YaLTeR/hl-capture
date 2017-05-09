@@ -5,6 +5,13 @@ use std::ffi::{ CStr, CString };
 
 use errors::*;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct Rational {
+    pub numerator: c_int,
+    pub denominator: c_int,
+}
+
 #[derive(Clone, Copy)]
 pub struct Codec {
     ptr: *mut ffmpeg_sys::AVCodec,
@@ -20,6 +27,15 @@ pub struct PixelFormats {
 
 pub struct Context {
     ptr: *mut ffmpeg_sys::AVCodecContext,
+}
+
+impl From<(i32, i32)> for Rational {
+    fn from((numerator, denominator): (i32, i32)) -> Self {
+        Self {
+            numerator,
+            denominator,
+        }
+    }
 }
 
 impl Codec {
