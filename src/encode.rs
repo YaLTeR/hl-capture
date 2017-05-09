@@ -1,6 +1,11 @@
 use ffmpeg;
+use std::sync::Mutex;
 
 use errors::*;
+
+lazy_static! {
+    static ref VIDEO_ENCODER: Mutex<Option<ffmpeg::codec::Video>> = Mutex::new(None);
+}
 
 /// Initialize the encoding stuff. Should be called once.
 pub fn initialize() -> Result<()> {
@@ -42,6 +47,8 @@ command!(cap_set_video_encoder, |engine| {
             }
 
             engine.con_print(&buf);
+
+            *VIDEO_ENCODER.lock().unwrap() = Some(video);
         } else {
             engine.con_print(&format!("Invalid encoder type '{}'\n", encoder_name));
         }
