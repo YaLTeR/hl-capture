@@ -3,6 +3,7 @@
 
 #[macro_use]
 extern crate error_chain;
+extern crate ffmpeg;
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;
@@ -15,6 +16,7 @@ mod errors {
 mod macros;
 mod command;
 mod dl;
+mod encode;
 mod engine;
 mod function;
 mod hooks {

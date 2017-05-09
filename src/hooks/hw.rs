@@ -5,10 +5,11 @@ use error_chain::ChainedError;
 use libc::*;
 use std::cmp;
 use std::ffi::{CStr, CString};
-use std::sync::RwLock;
+use std::sync::{ Once, ONCE_INIT, RwLock };
 
 use command;
 use dl;
+use encode;
 use errors::*;
 use function::Function;
 
@@ -49,6 +50,16 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     // Refresh all pointers.
     if let Err(ref e) = refresh_pointers().chain_err(|| "error refreshing pointers") {
         panic!("{}", e.display());
+    }
+
+    // Initialize the encoding.
+    {
+        static INIT: Once = ONCE_INIT;
+        INIT.call_once(|| {
+            if let Err(ref e) = encode::initialize().chain_err(|| "error initializing encoding") {
+                panic!("{}", e.display());
+            }
+        });
     }
 
     let rv = real!(RunListenServer)(instance,
