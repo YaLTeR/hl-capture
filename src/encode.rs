@@ -89,7 +89,8 @@ fn test_video_output() -> Result<()> {
     context.set_pixel_format(ffmpeg_sys::AVPixelFormat::AV_PIX_FMT_YUV420P);
 
     // Get ready for encoding.
-    let context = context.open();
+    let context = context.open()
+        .chain_err(|| "could not open context for encoding")?;
 
     Ok(())
 }
