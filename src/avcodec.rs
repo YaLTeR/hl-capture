@@ -36,6 +36,10 @@ pub struct OpenContext {
     context: Context,
 }
 
+pub struct Frame {
+    ptr: *mut ffmpeg_sys::AVFrame,
+}
+
 impl From<(i32, i32)> for Rational {
     fn from((numerator, denominator): (i32, i32)) -> Self {
         Self {
@@ -204,6 +208,14 @@ impl Drop for Context {
     fn drop(&mut self) {
         unsafe {
             ffmpeg_sys::avcodec_free_context(&mut self.ptr);
+        }
+    }
+}
+
+impl Drop for Frame {
+    fn drop(&mut self) {
+        unsafe {
+            ffmpeg_sys::av_frame_free(&mut self.ptr);
         }
     }
 }
