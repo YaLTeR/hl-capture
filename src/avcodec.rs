@@ -217,12 +217,20 @@ impl Drop for Context {
 }
 
 impl Frame {
-    pub fn new() -> Result<Self> {
+    pub fn new(pixel_format: ffmpeg_sys::AVPixelFormat,
+               width: u32,
+               height: u32) -> Result<Self> {
         let ptr = unsafe {
             ffmpeg_sys::av_frame_alloc()
         };
 
         ensure!(!ptr.is_null(), "unable to allocate a frame");
+
+        unsafe {
+            (*ptr).format = pixel_format as c_int;
+            (*ptr).width = cmp::min(width, c_int::max_value() as u32) as c_int;
+            (*ptr).height = cmp::min(height, c_int::max_value() as u32) as c_int;
+        }
 
         Ok(Self { ptr })
     }
