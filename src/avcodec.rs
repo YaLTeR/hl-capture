@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use ffmpeg_sys;
 use libc::*;
 use std::cmp;
