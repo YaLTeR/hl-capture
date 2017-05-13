@@ -80,6 +80,9 @@ fn test_video_output() -> Result<()> {
     ensure!(codec.is_some(), "codec is None");
     let codec = codec.unwrap();
 
+    let octx = avcodec::OutputContext::new("/home/yalter/text.mkv")
+        .chain_err(|| "unable to get the output context")?;
+
     let mut context = codec.context()
         .chain_err(|| "unable to get the codec context")?;
 

@@ -40,6 +40,10 @@ pub struct Frame {
     ptr: *mut ffmpeg_sys::AVFrame,
 }
 
+pub struct OutputContext {
+    ptr: *mut ffmpeg_sys::AVFormatContext,
+}
+
 impl From<(i32, i32)> for Rational {
     fn from((numerator, denominator): (i32, i32)) -> Self {
         Self {
@@ -228,6 +232,35 @@ impl Drop for Frame {
     fn drop(&mut self) {
         unsafe {
             ffmpeg_sys::av_frame_free(&mut self.ptr);
+        }
+    }
+}
+
+impl OutputContext {
+    pub fn new(filename: &str) -> Result<Self> {
+        let filename = CString::new(filename)
+            .chain_err(|| "unable to convert filename to a CString")?;
+
+        let mut ptr = ptr::null_mut();
+
+        let rv = unsafe {
+            ffmpeg_sys::avformat_alloc_output_context2(&mut ptr,
+                                                       ptr::null_mut(),
+                                                       ptr::null_mut(),
+                                                       filename.as_ptr())
+        };
+
+        // TODO: check and report the error code.
+        ensure!(rv >= 0, "unable to allocate the output context");
+
+        Ok(Self { ptr })
+    }
+}
+
+impl Drop for OutputContext {
+    fn drop(&mut self) {
+        unsafe {
+            ffmpeg_sys::avformat_free_context(self.ptr);
         }
     }
 }
