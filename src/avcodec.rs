@@ -3,7 +3,6 @@ use ffmpeg_sys;
 use libc::*;
 use std::cmp;
 use std::ffi::{ CStr, CString };
-use std::ops::Deref;
 use std::ptr;
 
 use errors::*;
