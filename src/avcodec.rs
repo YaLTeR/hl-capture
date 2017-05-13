@@ -212,6 +212,18 @@ impl Drop for Context {
     }
 }
 
+impl Frame {
+    pub fn new() -> Result<Self> {
+        let ptr = unsafe {
+            ffmpeg_sys::av_frame_alloc()
+        };
+
+        ensure!(!ptr.is_null(), "unable to allocate a frame");
+
+        Ok(Self { ptr })
+    }
+}
+
 impl Drop for Frame {
     fn drop(&mut self) {
         unsafe {
