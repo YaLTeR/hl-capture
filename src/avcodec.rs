@@ -222,6 +222,7 @@ impl Drop for Frame {
 
 pub fn initialize() {
     unsafe {
+        ffmpeg_sys::av_register_all();
         ffmpeg_sys::avcodec_register_all();
     }
 }
