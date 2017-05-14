@@ -232,6 +232,12 @@ impl Frame {
             (*ptr).height = cmp::min(height, c_int::max_value() as u32) as c_int;
         }
 
+        let rv = unsafe {
+            ffmpeg_sys::av_frame_get_buffer(ptr, 32)
+        };
+
+        ensure!(rv == 0, "unable to allocate frame data buffer");
+
         Ok(Self { ptr })
     }
 }
