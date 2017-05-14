@@ -83,6 +83,8 @@ fn test_video_output() -> Result<()> {
     let octx = avcodec::OutputContext::new("/home/yalter/text.mkv")
         .chain_err(|| "unable to get the output context")?;
 
+    // add stream
+
     let mut context = codec.context()
         .chain_err(|| "unable to get the codec context")?;
 
@@ -94,6 +96,36 @@ fn test_video_output() -> Result<()> {
     // Get ready for encoding.
     let context = context.open()
         .chain_err(|| "could not open context for encoding")?;
+
+    // parameters from context into stream
+    //
+    // if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
+    //     enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    //
+    // set stream time_base
+    //
+    // maybe av_dump_format for debug log purposes
+    //
+    // if (!(ofmt_ctx->oformat->flags & AVFMT_NOFILE)) {
+    //     ret = avio_open(&ofmt_ctx->pb, filename, AVIO_FLAG_WRITE);
+    //     if (ret < 0) {
+    //         av_log(NULL, AV_LOG_ERROR, "Could not open output file '%s'", filename);
+    //         return ret;
+    //     }
+    // }
+    //
+    // avformat_write_header
+    //
+    // write frames:
+    //     make a frame, fill it with data
+    //     avcodec_send_frame
+    //     avcodec_receive_packet loop until AVERROR(EAGAIN)
+    //
+    // flush:
+    //     avcodec_send_frame(null)
+    //     avcodec_receive_packet loop until AVERROR_EOF
+    //
+    // av_write_trailer
 
     Ok(())
 }
