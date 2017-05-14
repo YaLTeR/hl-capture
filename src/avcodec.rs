@@ -236,7 +236,13 @@ impl Frame {
             ffmpeg_sys::av_frame_get_buffer(ptr, 32)
         };
 
-        ensure!(rv == 0, "unable to allocate frame data buffer");
+        ensure!(rv == 0, "unable to allocate the frame data buffer");
+
+        let rv = unsafe {
+            ffmpeg_sys::av_frame_make_writable(ptr)
+        };
+
+        ensure!(rv == 0, "unable to make the frame data bufer writable");
 
         Ok(Self { ptr })
     }
