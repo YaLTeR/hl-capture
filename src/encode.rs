@@ -112,38 +112,31 @@ fn test_video_output() -> Result<()> {
 
     let stream_time_base = context.stream(0).unwrap().time_base();
 
+    let mut converter = ffmpeg::software::converter((640, 360),
+                                                ffmpeg::format::Pixel::RGB24,
+                                                encoder.format())
+        .chain_err(|| "could not get the color conversion context")?;
+
     {
-        let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, 640, 360);
+        let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, 640, 360);
+        let mut output_frame = ffmpeg::frame::Video::new(encoder.format(), 640, 360);
 
-        {
-            let mut y = frame.data_mut(0);
-
-            for i in 0..y.len() {
-                y[i] = i as u8;
-            }
-        }
-
-        for i in 0..120 {
+        for i in 0..255 {
             {
-                let mut u = frame.data_mut(1);
+                let mut y = frame.plane_mut::<(u8, u8, u8)>(0);
 
-                for j in 0..u.len() / 2 {
-                    u[j] = (i * (256 / 60)) as u8;
+                for j in 0..y.len() {
+                    y[j] = (255, i as u8, 255 - i as u8);
                 }
             }
 
-            {
-                let mut v = frame.data_mut(2);
+            converter.run(&frame, &mut output_frame)
+                .chain_err(|| "could not convert the frame to the correct format")?;
 
-                for j in 0..v.len() / 2 {
-                    v[j] = (i * (256 / 60)) as u8;
-                }
-            }
-
-            frame.set_pts(Some(i));
+            output_frame.set_pts(Some(i));
 
             let mut packet = ffmpeg::Packet::empty();
-            if encoder.encode(&frame, &mut packet).chain_err(|| "could not encode the frame")? {
+            if encoder.encode(&output_frame, &mut packet).chain_err(|| "could not encode the frame")? {
                 packet.rescale_ts((1, 60), stream_time_base);
 
                 packet.write_interleaved(&mut context)
