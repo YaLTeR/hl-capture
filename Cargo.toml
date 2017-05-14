@@ -14,6 +14,6 @@ panic = "abort"
 
 [dependencies]
 error-chain = "0.10"
-ffmpeg-sys = "3.2.1"
+ffmpeg = { git = "https://github.com/meh/rust-ffmpeg.git" }
 lazy_static = "0.2"
 libc = "0.2"

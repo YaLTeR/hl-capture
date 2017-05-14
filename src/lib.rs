@@ -3,7 +3,8 @@
 
 #[macro_use]
 extern crate error_chain;
-extern crate ffmpeg_sys;
+#[macro_use]
+extern crate ffmpeg;
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;
@@ -14,7 +15,6 @@ mod errors {
 }
 #[macro_use]
 mod macros;
-mod avcodec;
 mod command;
 mod dl;
 mod encode;

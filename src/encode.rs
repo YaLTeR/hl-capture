@@ -1,17 +1,16 @@
 use error_chain::ChainedError;
-use ffmpeg_sys;
-use std::sync::RwLock;
+use ffmpeg;
+use std::sync::Mutex;
 
-use avcodec;
 use errors::*;
 
 lazy_static! {
-    static ref VIDEO_ENCODER: RwLock<Option<avcodec::Codec>> = RwLock::new(None);
+    static ref VIDEO_ENCODER: Mutex<Option<ffmpeg::codec::Video>> = Mutex::new(None);
 }
 
 /// Initialize the encoding stuff. Should be called once.
 pub fn initialize() -> Result<()> {
-    avcodec::initialize();
+    ffmpeg::init().chain_err(|| "error initializing ffmpeg")?;
 
     Ok(())
 }
@@ -33,41 +32,39 @@ command!(cap_set_video_encoder, |engine| {
     }
 
     let encoder_name = args.nth(1).unwrap();
-    match avcodec::find_encoder_by_name(&encoder_name) {
-        Ok(Some(encoder)) => {
-            if encoder.is_video() {
-                let mut buf = String::new();
 
-                buf.push_str(&format!("Encoder: {}\n", encoder_name));
-                buf.push_str(&format!("Description: {}\n", encoder.description()));
-                buf.push_str("Pixel formats: ");
+    if let Some(encoder) = ffmpeg::encoder::find_by_name(&encoder_name) {
+        if let Ok(video) = encoder.video() {
+            let mut buf = String::new();
 
-                if let Some(formats) = encoder.pixel_formats() {
-                    buf.push_str(&format!("{:?}\n", formats.collect::<Vec<_>>()));
-                } else {
-                    buf.push_str("any\n");
-                }
+            buf.push_str(&format!("Selected encoder: {}\n", encoder_name));
+            buf.push_str(&format!("Description: {}\n", encoder.description()));
+            buf.push_str("Pixel formats: ");
 
-                engine.con_print(&buf);
-
-                *VIDEO_ENCODER.write().unwrap() = Some(encoder);
+            if let Some(formats) = video.formats() {
+                buf.push_str(&format!("{:?}\n", formats.collect::<Vec<_>>()));
             } else {
-                engine.con_print(&format!("Invalid encoder type '{}'\n", encoder_name));
+                buf.push_str("any\n");
             }
-        }
 
-        Ok(None) => {
-            engine.con_print(&format!("Unknown encoder '{}'\n", encoder_name));
-        },
+            engine.con_print(&buf);
 
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
+            *VIDEO_ENCODER.lock().unwrap() = Some(video);
+        } else {
+            engine.con_print(&format!("Invalid encoder type '{}'\n", encoder_name));
         }
+    } else {
+        engine.con_print(&format!("Unknown encoder '{}'\n", encoder_name));
     }
 });
 
 command!(cap_test_video_output, |engine| {
-    if let Err(ref e) = test_video_output() {
+    if VIDEO_ENCODER.lock().unwrap().is_none() {
+        engine.con_print("Please set the video encoder with cap_set_video_encoder.\n");
+        return;
+    }
+
+    if let Err(ref e) = test_video_output().chain_err(|| "error in test_video_output()") {
         engine.con_print(&format!("{}", e.display()));
         return;
     }
@@ -76,225 +73,95 @@ command!(cap_test_video_output, |engine| {
 });
 
 fn test_video_output() -> Result<()> {
-    use libc::EAGAIN;
-    use std::ffi::CString;
-    use std::ptr;
+    let codec = VIDEO_ENCODER.lock().unwrap();
 
-    let codec = *VIDEO_ENCODER.read().unwrap();
-    ensure!(codec.is_some(), "codec is None");
+    ensure!(codec.is_some(), "video encoder was not set");
+
     let codec = codec.unwrap();
 
-    let octx = avcodec::OutputContext::new("/home/yalter/text.mp4")
-        .chain_err(|| "unable to get the output context")?;
+    let mut context = ffmpeg::format::output(&"/home/yalter/test.mp4")
+        .chain_err(|| "could not create the output context")?;
 
-    // add stream
-    // ==== TODO
-    let stream = unsafe {
-        ffmpeg_sys::avformat_new_stream(octx.ptr, ptr::null())
-    };
+    let mut encoder = {
+        let mut stream = context.add_stream(codec)
+            .chain_err(|| "could not add the video stream")?;
 
-    ensure!(!stream.is_null(), "unable to allocate the output stream");
-    // /==== TODO
+        let mut encoder = stream.codec().encoder().video()
+            .chain_err(|| "could not retrieve the video encoder")?;
 
-    let mut context = codec.context()
-        .chain_err(|| "unable to get the codec context")?;
+        encoder.set_width(640);
+        encoder.set_height(360);
+        encoder.set_time_base((1, 60));
 
-    context.set_width(640);
-    context.set_height(360);
-    context.set_time_base(&(1, 60).into());
-    context.set_pixel_format(ffmpeg_sys::AVPixelFormat::AV_PIX_FMT_YUV420P);
-
-    // Get ready for encoding.
-    let context = context.open()
-        .chain_err(|| "could not open context for encoding")?;
-
-    // parameters from context into stream
-    // ==== TODO
-    let rv = unsafe {
-        ffmpeg_sys::avcodec_parameters_from_context((*stream).codecpar, context.context.ptr)
-    };
-
-    ensure!(rv >= 0, "could not copy encoder parameters to the output stream");
-    // /==== TODO
-
-    // if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
-    //     enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    // ==== TODO
-    let flags = unsafe {
-        (*(*octx.ptr).oformat).flags
-    };
-
-    if (flags & ffmpeg_sys::AVFMT_GLOBALHEADER) != 0 {
-        unsafe {
-            (*context.context.ptr).flags |= ffmpeg_sys::AV_CODEC_FLAG_GLOBAL_HEADER as i32;
+        if let Some(mut formats) = codec.formats() {
+            encoder.set_format(formats.next().unwrap());
+        } else {
+            encoder.set_format(ffmpeg::format::Pixel::YUV420P);
         }
-    }
-    // /==== TODO
 
-    // set stream time_base
-    // ==== TODO
-    unsafe {
-        (*stream).time_base = context.context.time_base().into();
-    }
+        let encoder = encoder.open_as(codec).chain_err(|| "could not open the video encoder")?;
+        stream.set_parameters(&encoder);
 
-    unsafe {
-        println!("right after setting up: encoder time base: {:?}, stream time base: {:?}", context.context.time_base(), (*stream).time_base);
-    }
-    // /==== TODO
+        stream.set_time_base((1, 60));
 
-    // maybe av_dump_format for debug log purposes
-    // ==== TODO
-    unsafe {
-        ffmpeg_sys::av_dump_format(octx.ptr, 0, CString::new("/home/yalter/test.mp4").unwrap().as_ptr(), 1);
-    }
-    // /==== TODO
-
-    // if (!(ofmt_ctx->oformat->flags & AVFMT_NOFILE)) {
-    //     ret = avio_open(&ofmt_ctx->pb, filename, AVIO_FLAG_WRITE);
-    //     if (ret < 0) {
-    //         av_log(NULL, AV_LOG_ERROR, "Could not open output file '%s'", filename);
-    //         return ret;
-    //     }
-    // }
-    // ==== TODO
-    if (flags & ffmpeg_sys::AVFMT_NOFILE) == 0 {
-        let rv = unsafe {
-            ffmpeg_sys::avio_open(&mut (*octx.ptr).pb, CString::new("/home/yalter/test.mp4").unwrap().as_ptr(), ffmpeg_sys::AVIO_FLAG_WRITE)
-        };
-
-        ensure!(rv >= 0, "unable to open the output file for writing");
-    }
-
-    unsafe {
-        println!("after avio_open: encoder time base: {:?}, stream time base: {:?}", context.context.time_base(), (*stream).time_base);
-    }
-    // /==== TODO
-
-    // avformat_write_header
-    // ==== TODO
-    let rv = unsafe {
-        ffmpeg_sys::avformat_write_header(octx.ptr, ptr::null_mut())
+        encoder
     };
 
-    ensure!(rv >= 0, "unable to write header to the output file");
+    context.write_header()
+        .chain_err(|| "could not write the header")?;
 
-    unsafe {
-        println!("after avformat_write_header: encoder time base: {:?}, stream time base: {:?}", context.context.time_base(), (*stream).time_base);
-    }
-    // /==== TODO
+    let stream_time_base = context.stream(0).unwrap().time_base();
 
-    // write frames:
-    //     make a frame, fill it with data
-    //     avcodec_send_frame
-    //     avcodec_receive_packet loop until AVERROR(EAGAIN)
-    // ==== TODO
-    let mut packet = unsafe {
-        ffmpeg_sys::av_packet_alloc()
-    };
-    ensure!(!packet.is_null(), "unsable to allocate a packet");
+    {
+        let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, 640, 360);
 
-    unsafe {
-        println!("right before encoding: encoder time base: {:?}, stream time base: {:?}", context.context.time_base(), (*stream).time_base);
-    }
+        {
+            let mut y = frame.data_mut(0);
 
-    for i in 0..60 {
-        let mut frame = avcodec::Frame::new(ffmpeg_sys::AV_PIX_FMT_YUV420P, 640, 360)
-            .chain_err(|| "could not allocate a frame")?;
+            for i in 0..y.len() {
+                y[i] = i as u8;
+            }
+        }
 
-        unsafe {
-            let linesize = (*frame.ptr).linesize;
-            let data = (*frame.ptr).data;
+        for i in 0..120 {
+            {
+                let mut u = frame.data_mut(1);
 
-            for y in 0..360 {
-                for x in 0..640 {
-                    *data[0].offset((y * linesize[0] + x) as isize) = (x + y) as u8;
+                for j in 0..u.len() / 2 {
+                    u[j] = (i * (256 / 60)) as u8;
                 }
             }
 
-            for y in 0..360/2 {
-                for x in 0..640/2 {
-                    *data[1].offset((y * linesize[1] + x) as isize) = (x + y) as u8;
-                    *data[2].offset((y * linesize[2] + x) as isize) = (x + y) as u8;
+            {
+                let mut v = frame.data_mut(2);
+
+                for j in 0..v.len() / 2 {
+                    v[j] = (i * (256 / 60)) as u8;
                 }
             }
 
-            (*frame.ptr).pts = i;
-        }
+            frame.set_pts(Some(i));
 
-        // send to encoder
-        let rv = unsafe {
-            ffmpeg_sys::avcodec_send_frame(context.context.ptr, frame.ptr)
-        };
-        ensure!(rv == 0, "error sending a frame for encoding");
+            let mut packet = ffmpeg::Packet::empty();
+            if encoder.encode(&frame, &mut packet).chain_err(|| "could not encode the frame")? {
+                packet.rescale_ts((1, 60), stream_time_base);
 
-        loop {
-            let rv = unsafe {
-                ffmpeg_sys::avcodec_receive_packet(context.context.ptr, packet)
-            };
-            ensure!(rv == 0 || rv == ffmpeg_sys::AVERROR(EAGAIN), "error receiving a packet");
-
-            if rv == ffmpeg_sys::AVERROR(EAGAIN) {
-                break;
+                packet.write_interleaved(&mut context)
+                    .chain_err(|| "could not write the packet")?;
             }
-
-            unsafe {
-                ffmpeg_sys::av_packet_rescale_ts(packet, context.context.time_base().into(), (*stream).time_base);
-            }
-
-            let rv = unsafe {
-                ffmpeg_sys::av_interleaved_write_frame(octx.ptr, packet)
-            };
-            ensure!(rv == 0, "error writing the packet to the output file");
-        }
-    }
-    // /==== TODO
-
-    // flush:
-    //     avcodec_send_frame(null)
-    //     avcodec_receive_packet loop until AVERROR_EOF
-    // ==== TODO
-    let rv = unsafe {
-        ffmpeg_sys::avcodec_send_frame(context.context.ptr, ptr::null())
-    };
-    ensure!(rv == 0, "error flushing the packets");
-
-    loop {
-        let rv = unsafe {
-            ffmpeg_sys::avcodec_receive_packet(context.context.ptr, packet)
-        };
-        ensure!(rv == 0 || rv == ffmpeg_sys::AVERROR_EOF, "error receiving a packet during flushing");
-
-        if rv == ffmpeg_sys::AVERROR_EOF {
-            break;
         }
 
-        unsafe {
-            ffmpeg_sys::av_packet_rescale_ts(packet, context.context.time_base().into(), (*stream).time_base);
-        }
+        let mut packet = ffmpeg::Packet::empty();
+        while encoder.flush(&mut packet).chain_err(|| "could not get the packet")? {
+            packet.rescale_ts((1, 60), stream_time_base);
 
-        let rv = unsafe {
-            ffmpeg_sys::av_interleaved_write_frame(octx.ptr, packet)
-        };
-        ensure!(rv == 0, "error writing the packet to the output file during flushing");
-    }
-
-    unsafe {
-        ffmpeg_sys::av_packet_free(&mut packet);
-    }
-    // /==== TODO
-
-    // av_write_trailer
-    // ==== TODO
-    unsafe {
-        ffmpeg_sys::av_write_trailer(octx.ptr);
-    }
-
-    if (flags & ffmpeg_sys::AVFMT_NOFILE) == 0 {
-        unsafe {
-            ffmpeg_sys::avio_closep(&mut (*octx.ptr).pb);
+            packet.write_interleaved(&mut context)
+                .chain_err(|| "could not write the packet")?;
         }
     }
-    // /==== TODO
+
+    context.write_trailer()
+        .chain_err(|| "could not write the trailer")?;
 
     Ok(())
 }
