@@ -29,19 +29,19 @@ pub struct PixelFormats {
 pub struct Context {
     // The Codec which was used to initialize this Context.
     codec: Codec,
-    ptr: *mut ffmpeg_sys::AVCodecContext,
+    pub ptr: *mut ffmpeg_sys::AVCodecContext,
 }
 
 pub struct OpenContext {
-    context: Context,
+    pub context: Context,
 }
 
 pub struct Frame {
-    ptr: *mut ffmpeg_sys::AVFrame,
+    pub ptr: *mut ffmpeg_sys::AVFrame,
 }
 
 pub struct OutputContext {
-    ptr: *mut ffmpeg_sys::AVFormatContext,
+    pub ptr: *mut ffmpeg_sys::AVFormatContext,
 }
 
 impl From<(i32, i32)> for Rational {
