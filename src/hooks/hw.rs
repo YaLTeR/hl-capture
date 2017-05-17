@@ -34,7 +34,8 @@ pub struct Pointers {
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
 }
 
-/// This is the "main" function of hw.so, called inside `CEngineAPI::Run()`.
+/// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
+///
 /// The game runs within this function and shortly after it exits hw.so is unloaded.
 /// Note: `_restart` also causes this function to exit, in this case the launcher
 /// unloads and reloads hw.so and this function is called again as if it was a fresh start.
@@ -75,8 +76,9 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     rv
 }
 
-/// This function initializes the hunk memory.
-/// After the hunk memory is initialized we can register console commands and variables.
+/// Initializes the hunk memory.
+///
+/// After the hunk memory has been initialized we can register console commands and variables.
 #[no_mangle]
 pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     real!(Memory_Init)(buf, size);
@@ -84,7 +86,7 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     register_cvars_and_commands();
 }
 
-/// Open hw.so, then get and store all necessary function and variable addresses.
+/// Obtains and stores all necessary function and variable addresses.
 fn refresh_pointers() -> Result<()> {
     let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
         .chain_err(|| "couldn't load hw.so")?;
@@ -106,42 +108,54 @@ fn refresh_pointers() -> Result<()> {
     Ok(())
 }
 
-/// Reset all pointers to their default values.
+/// Resets all pointers to their default values.
 fn reset_pointers() {
     *POINTERS.write().unwrap() = Pointers::default();
 }
 
-/// Register console commands and variables.
-/// Unsafe because it should only be called from the main game thread.
+/// Registers console commands and variables.
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
 unsafe fn register_cvars_and_commands() {
     for cmd in command::COMMANDS.read().unwrap().iter() {
         register_command(cmd.name(), cmd.callback());
     }
 }
 
-/// Register a console command.
-/// Unsafe because it should only be called from the main game thread.
+/// Registers a console command.
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
 unsafe fn register_command(name: &'static [u8], callback: unsafe extern "C" fn()) {
     real!(Cmd_AddCommand)(name as *const _ as *const _, callback as *mut c_void);
 }
 
-/// Print the given string to the game console. String must not contain null bytes.
-/// Unsafe because it should only be called from the main game thread.
+/// Prints the given string to the game console.
+///
+/// `string` must not contain null bytes.
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
 pub unsafe fn con_print(string: &str) {
     real!(Con_Printf)(CString::new(string.replace('%', "%%"))
                           .expect("string cannot contain null bytes")
                           .as_ptr())
 }
 
-/// Get the console command argument count.
-/// Unsafe because it should only be called from the main game thread.
+/// Gets the console command argument count.
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
 pub unsafe fn cmd_argc() -> u32 {
     let argc = real!(Cmd_Argc)();
     cmp::max(0, argc) as u32
 }
 
-/// Get a console command argument.
-/// Unsafe because it should only be called from the main game thread.
+/// Gets a console command argument.
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
 pub unsafe fn cmd_argv(index: u32) -> String {
     let index = cmp::min(index, i32::max_value() as u32) as i32;
     let arg = real!(Cmd_Argv)(index);

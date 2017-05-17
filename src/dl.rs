@@ -3,7 +3,9 @@ use std::ffi::{CStr, CString};
 
 use errors::*;
 
+/// A container for a `dlopen()` handle.
 pub struct Handle {
+    /// The handle returned by `dlopen()`.
     ptr: *mut c_void,
 }
 
@@ -18,6 +20,7 @@ impl Drop for Handle {
 }
 
 impl Handle {
+    /// Obtains a symbol address using `dlsym()`.
     pub fn sym(&self, symbol: &str) -> Result<*mut c_void> {
         // Clear the previous error.
         unsafe {
@@ -38,6 +41,7 @@ impl Handle {
     }
 }
 
+/// Opens a dynamic library and returns the resulting handle.
 pub fn open(filename: &str, flags: c_int) -> Result<Handle> {
     let filename = CString::new(filename)
         .chain_err(|| "unable to convert filename to a CString")?;
