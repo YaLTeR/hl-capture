@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["open","Opens a dynamic library and returns the resulting handle."]],"struct":[["Handle","A container for a `dlopen()` handle."]]});

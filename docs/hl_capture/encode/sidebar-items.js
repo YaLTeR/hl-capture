@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["initialize","Initialize the encoding stuff. Should be called once."],["test_video_output",""]],"static":[["VIDEO_ENCODER",""]],"struct":[["Encoder",""],["VIDEO_ENCODER",""],["cap_set_video_encoder",""],["cap_test_video_output",""]]});
