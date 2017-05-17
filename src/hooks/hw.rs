@@ -34,9 +34,9 @@ pub struct Pointers {
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
 }
 
-/// This is the "main" function of hw.so, called inside CEngineAPI::Run().
+/// This is the "main" function of hw.so, called inside `CEngineAPI::Run()`.
 /// The game runs within this function and shortly after it exits hw.so is unloaded.
-/// Note: _restart also causes this function to exit, in this case the launcher
+/// Note: `_restart` also causes this function to exit, in this case the launcher
 /// unloads and reloads hw.so and this function is called again as if it was a fresh start.
 #[export_name = "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"]
 pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
@@ -79,11 +79,9 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
 /// After the hunk memory is initialized we can register console commands and variables.
 #[no_mangle]
 pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
-    let rv = real!(Memory_Init)(buf, size);
+    real!(Memory_Init)(buf, size);
 
     register_cvars_and_commands();
-
-    rv
 }
 
 /// Open hw.so, then get and store all necessary function and variable addresses.
@@ -147,8 +145,7 @@ pub unsafe fn cmd_argc() -> u32 {
 pub unsafe fn cmd_argv(index: u32) -> String {
     let index = cmp::min(index, i32::max_value() as u32) as i32;
     let arg = real!(Cmd_Argv)(index);
-    let string = CStr::from_ptr(arg).to_string_lossy().into_owned();
-    string
+    CStr::from_ptr(arg).to_string_lossy().into_owned()
 }
 
 command!(cap_test, |engine| {

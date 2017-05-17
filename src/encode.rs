@@ -84,7 +84,7 @@ impl Encoder {
     }
 
     fn encode(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {
-        self.converter.run(&frame, &mut self.output_frame)
+        self.converter.run(frame, &mut self.output_frame)
             .chain_err(|| "could not convert the frame to the correct format")?;
 
         self.output_frame.set_pts(Some(self.pts));
@@ -116,6 +116,7 @@ impl Encoder {
 
 impl Drop for Encoder {
     fn drop(&mut self) {
+        #![allow(unused_must_use)]
         self.flush();
         self.context.write_trailer();
     }
@@ -202,8 +203,8 @@ fn test_video_output() -> Result<()> {
 
     {
         let mut data = frame.plane_mut::<(u8, u8, u8)>(0);
-        for i in 0..data.len() {
-            data[i] = (0, 255, 0);
+        for pixel in data.iter_mut() {
+            *pixel = (0, 255, 0);
         }
     }
 

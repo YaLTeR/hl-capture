@@ -19,21 +19,18 @@ impl Engine {
         Engine { _private: PhantomData }
     }
 
-    pub fn args<'a>(&'a self) -> command::Args<'a> {
-        command::Args::new(&self)
+    pub fn args(&self) -> command::Args {
+        command::Args::new(self)
     }
 
-    #[inline(always)]
     pub fn con_print(&self, string: &str) {
         unsafe { hw::con_print(string) }
     }
 
-    #[inline(always)]
     pub fn cmd_argc(&self) -> u32 {
         unsafe { hw::cmd_argc() }
     }
 
-    #[inline(always)]
     pub fn cmd_argv(&self, index: u32) -> String {
         unsafe { hw::cmd_argv(index) }
     }
