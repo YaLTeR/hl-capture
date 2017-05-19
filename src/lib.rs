@@ -9,7 +9,7 @@ extern crate lazy_static;
 extern crate libc;
 
 mod errors {
-    // Create the Error, ErrorKind, ResultExt, and Result types
+    // Create the Error, ErrorKind, ResultExt, and Result types.
     error_chain!{}
 }
 #[macro_use]
