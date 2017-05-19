@@ -6,5 +6,8 @@ rust:
 matrix:
   allow_failures:
     - rust: nightly
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install -qq build-essential
 install: rustup target add i686-unknown-linux-gnu
 script: RUST_BACKTRACE=1 cargo build --verbose
