@@ -7,3 +7,4 @@ matrix:
   allow_failures:
     - rust: nightly
 install: rustup target add i686-unknown-linux-gnu
+script: RUST_BACKTRACE=1 cargo build --verbose
