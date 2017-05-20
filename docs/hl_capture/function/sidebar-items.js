@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["Function","A container for a FFI function pointer."]]});

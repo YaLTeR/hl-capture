@@ -39,3 +39,8 @@ before_install:
 
 install:
   - rustup target add i686-unknown-linux-gnu
+
+script:
+  - cargo build --verbose
+  - cargo test --verbose
+  - rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments" --crate-name hl_capture src/lib.rs --target i686-unknown-linux-gnu -o docs -L target/i686-unknown-linux-gnu/debug/deps
