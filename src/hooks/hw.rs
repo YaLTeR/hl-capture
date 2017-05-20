@@ -38,7 +38,7 @@ pub struct Pointers {
     Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
-    GL_EndRendering: Function<unsafe extern "C" fn()>,
+    Sys_VID_FlipScreen: Function<unsafe extern "C" fn()>,
     VideoMode_GetCurrentVideoMode: Function<unsafe extern "C" fn(*mut c_int,
                                                                  *mut c_int,
                                                                  *mut c_int)>,
@@ -131,8 +131,8 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// Blits pixels from the framebuffer to screen and flips.
 ///
 /// If framebuffers aren't used, simply flips the screen.
-#[no_mangle]
-pub unsafe extern "C" fn GL_EndRendering() {
+#[export_name = "_Z18Sys_VID_FlipScreenv"]
+pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     let (w, h) = get_resolution();
     let buf = encode::get_buffer((w, h));
 
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn GL_EndRendering() {
                        buf.as_mut_ptr() as _);
     }
 
-    real!(GL_EndRendering)();
+    real!(Sys_VID_FlipScreen)();
 
     // TODO: check if we're called from SCR_UpdateScreen().
 
@@ -166,7 +166,7 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Cmd_Argv, "Cmd_Argv");
         find!(pointers, hw, Con_Printf, "Con_Printf");
         find!(pointers, hw, Memory_Init, "Memory_Init");
-        find!(pointers, hw, GL_EndRendering, "GL_EndRendering");
+        find!(pointers, hw, Sys_VID_FlipScreen, "_Z18Sys_VID_FlipScreenv");
         find!(pointers, hw, VideoMode_GetCurrentVideoMode, "VideoMode_GetCurrentVideoMode");
         find!(pointers, hw, VideoMode_IsWindowed, "VideoMode_IsWindowed");
 

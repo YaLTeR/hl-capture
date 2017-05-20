@@ -28,4 +28,4 @@ mod sdl;
 
 pub use self::hooks::hw::RunListenServer;
 pub use self::hooks::hw::Memory_Init;
-pub use self::hooks::hw::GL_EndRendering;
+pub use self::hooks::hw::Sys_VID_FlipScreen;
