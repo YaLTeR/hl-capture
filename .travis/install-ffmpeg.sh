@@ -1,7 +1,7 @@
 #!/bin/sh
 set -ex
 
-if [ ! -d "$HOME/ffmpeg" ]; then
+if [ ! -d "$HOME/ffmpeg/lib" ]; then
 	git clone https://github.com/FFMpeg/FFMpeg.git "$HOME/ffmpeg_src"
 	mkdir "$HOME/ffmpeg_build"
 	cd "$HOME/ffmpeg_build"
