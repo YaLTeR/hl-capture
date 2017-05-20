@@ -3,6 +3,7 @@
 
 use error_chain::ChainedError;
 use libc::*;
+use gl::types::*;
 use std::cmp;
 use std::ffi::{CStr, CString};
 use std::sync::{Once, ONCE_INIT, RwLock};
@@ -33,6 +34,23 @@ pub struct Pointers {
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
     GL_EndRendering: Function<unsafe extern "C" fn()>,
+
+    s_BackBufferFBO: Option<*mut FBO_Container_t>,
+}
+
+// TODO: think about how to deal with unsafety here.
+// The compiler complaining about *mut not being Send/Sync is perfectly valid here.
+// Our safe RwLock cannot guarantee there isn't some game thread accessing the values
+// at the same time. Although reading/writing to a pointer is already unsafe?
+unsafe impl Send for Pointers {}
+unsafe impl Sync for Pointers {}
+
+#[repr(C)]
+struct FBO_Container_t {
+    s_hBackBufferFBO: GLuint,
+    s_hBackBufferCB: GLuint,
+    s_hBackBufferDB: GLuint,
+    s_hBackBufferTex: GLuint,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -114,6 +132,9 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Con_Printf, "Con_Printf");
         find!(pointers, hw, Memory_Init, "Memory_Init");
         find!(pointers, hw, GL_EndRendering, "GL_EndRendering");
+
+        pointers.s_BackBufferFBO = Some(hw.sym("s_BackBufferFBO")
+                .chain_err(|| "couldn't find s_BackBufferFBO")? as _);
     }
 
     Ok(())
