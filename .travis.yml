@@ -48,6 +48,7 @@ script:
   # Cargo build and cargo test each generate a set of .rlibs.
   # Thus, rustdoc has to go after cargo build but before cargo test.
   - rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments" --crate-name hl_capture src/lib.rs --target i686-unknown-linux-gnu -o docs -L target/i686-unknown-linux-gnu/debug/deps
+  - cp .travis/index.html docs/
 
   - cargo test --verbose
 
