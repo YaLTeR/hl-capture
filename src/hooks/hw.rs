@@ -42,7 +42,9 @@ pub struct Pointers {
     VideoMode_GetCurrentVideoMode: Function<unsafe extern "C" fn(*mut c_int,
                                                                  *mut c_int,
                                                                  *mut c_int)>,
+    VideoMode_IsWindowed: Function<unsafe extern "C" fn() -> c_int>,
 
+    window_rect: Option<*mut RECT>,
     s_BackBufferFBO: Option<*mut FBO_Container_t>,
 }
 
@@ -52,6 +54,15 @@ pub struct Pointers {
 // at the same time. Although reading/writing to a pointer is already unsafe?
 unsafe impl Send for Pointers {}
 unsafe impl Sync for Pointers {}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct RECT {
+    left: c_int,
+    right: c_int,
+    top: c_int,
+    bottom: c_int,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -122,9 +133,10 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// If framebuffers aren't used, simply flips the screen.
 #[no_mangle]
 pub unsafe extern "C" fn GL_EndRendering() {
+    let (w, h) = get_resolution();
+    let buf = encode::get_buffer((w, h));
+
     if *CAPTURING.read().unwrap() {
-        let (w, h) = get_resolution();
-        let buf = encode::get_buffer((w, h));
         gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
                        gl::RGBA, gl::UNSIGNED_BYTE,
                        buf.as_mut_ptr() as _);
@@ -156,7 +168,10 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Memory_Init, "Memory_Init");
         find!(pointers, hw, GL_EndRendering, "GL_EndRendering");
         find!(pointers, hw, VideoMode_GetCurrentVideoMode, "VideoMode_GetCurrentVideoMode");
+        find!(pointers, hw, VideoMode_IsWindowed, "VideoMode_IsWindowed");
 
+        pointers.window_rect = Some(hw.sym("window_rect")
+                .chain_err(|| "couldn't find window_rect")? as _);
         pointers.s_BackBufferFBO = Some(hw.sym("s_BackBufferFBO")
                 .chain_err(|| "couldn't find s_BackBufferFBO")? as _);
     }
@@ -223,10 +238,18 @@ pub unsafe fn cmd_argv(index: u32) -> String {
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
 pub unsafe fn get_resolution() -> (u32, u32) {
-    let mut width = mem::uninitialized();
-    let mut height = mem::uninitialized();
+    let mut width;
+    let mut height;
 
-    real!(VideoMode_GetCurrentVideoMode)(&mut width, &mut height, ptr::null_mut());
+    if real!(VideoMode_IsWindowed)() != 0 {
+        let window_rect = *POINTERS.read().unwrap().window_rect.unwrap();
+        width = window_rect.right - window_rect.left;
+        height = window_rect.bottom - window_rect.top;
+    } else {
+        width = mem::uninitialized();
+        height = mem::uninitialized();
+        real!(VideoMode_GetCurrentVideoMode)(&mut width, &mut height, ptr::null_mut());
+    }
 
     width = cmp::max(0, width);
     height = cmp::max(0, height);
