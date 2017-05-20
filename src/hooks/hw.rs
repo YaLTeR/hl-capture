@@ -32,6 +32,7 @@ pub struct Pointers {
     Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
+    GL_EndRendering: Function<unsafe extern "C" fn()>,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -85,6 +86,14 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     register_cvars_and_commands();
 }
 
+/// Blits pixels from the framebuffer to screen and flips.
+///
+/// If framebuffers aren't used, simply flips the screen.
+#[no_mangle]
+pub unsafe extern "C" fn GL_EndRendering() {
+    real!(GL_EndRendering)();
+}
+
 /// Obtains and stores all necessary function and variable addresses.
 fn refresh_pointers() -> Result<()> {
     let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
@@ -102,6 +111,7 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Cmd_Argv, "Cmd_Argv");
         find!(pointers, hw, Con_Printf, "Con_Printf");
         find!(pointers, hw, Memory_Init, "Memory_Init");
+        find!(pointers, hw, GL_EndRendering, "GL_EndRendering");
     }
 
     Ok(())
