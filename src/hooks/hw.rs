@@ -46,6 +46,7 @@ unsafe impl Send for Pointers {}
 unsafe impl Sync for Pointers {}
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 struct FBO_Container_t {
     s_hBackBufferFBO: GLuint,
     s_hBackBufferCB: GLuint,
@@ -112,6 +113,8 @@ pub unsafe extern "C" fn GL_EndRendering() {
     real!(GL_EndRendering)();
 
     // TODO: check if we're called from SCR_UpdateScreen().
+
+    println!("s_BackBufferFBO: {:?}", POINTERS.read().unwrap().s_BackBufferFBO.unwrap());
 }
 
 /// Obtains and stores all necessary function and variable addresses.
