@@ -42,5 +42,5 @@ install:
 
 script:
   - cargo build --verbose
-  - cargo test --verbose
   - rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments" --crate-name hl_capture src/lib.rs --target i686-unknown-linux-gnu -o docs -L target/i686-unknown-linux-gnu/debug/deps
+  - cargo test --verbose
