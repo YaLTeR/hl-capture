@@ -138,7 +138,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
     if *CAPTURING.read().unwrap() {
         gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
-                       gl::RGBA, gl::UNSIGNED_BYTE,
+                       gl::RGB, gl::UNSIGNED_BYTE,
                        buf.as_mut_ptr() as _);
     }
 
