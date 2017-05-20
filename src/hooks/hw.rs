@@ -3,6 +3,7 @@
 
 use error_chain::ChainedError;
 use libc::*;
+use gl;
 use gl::types::*;
 use std::cmp;
 use std::ffi::{CStr, CString};
@@ -13,6 +14,7 @@ use dl;
 use encode;
 use errors::*;
 use function::Function;
+use sdl;
 
 lazy_static!{
     pub static ref POINTERS: RwLock<Pointers> = RwLock::new(Pointers::default());
@@ -98,11 +100,15 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
 /// Initializes the hunk memory.
 ///
 /// After the hunk memory has been initialized we can register console commands and variables.
+/// It's also a good place to get OpenGL function pointers.
 #[no_mangle]
 pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     real!(Memory_Init)(buf, size);
 
     register_cvars_and_commands();
+
+    gl::ReadPixels::load_with(|s| sdl::get_proc_address(s) as _);
+    con_print(&format!("gl::ReadPixels::is_loaded() = {}", gl::ReadPixels::is_loaded()));
 }
 
 /// Blits pixels from the framebuffer to screen and flips.
@@ -114,7 +120,7 @@ pub unsafe extern "C" fn GL_EndRendering() {
 
     // TODO: check if we're called from SCR_UpdateScreen().
 
-    println!("s_BackBufferFBO: {:?}", POINTERS.read().unwrap().s_BackBufferFBO.unwrap());
+    // println!("s_BackBufferFBO: {:?}", *POINTERS.read().unwrap().s_BackBufferFBO.unwrap());
 }
 
 /// Obtains and stores all necessary function and variable addresses.

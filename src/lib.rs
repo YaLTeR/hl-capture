@@ -8,6 +8,7 @@ extern crate ffmpeg;
 extern crate lazy_static;
 extern crate libc;
 extern crate gl;
+extern crate sdl2_sys;
 
 mod errors {
     // Create the Error, ErrorKind, ResultExt, and Result types.
@@ -23,6 +24,7 @@ mod function;
 mod hooks {
     pub mod hw;
 }
+mod sdl;
 
 pub use self::hooks::hw::RunListenServer;
 pub use self::hooks::hw::Memory_Init;
