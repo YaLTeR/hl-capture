@@ -275,10 +275,10 @@ command!(cap_another_test, |engine| {
     engine.con_print("Hello! %s %d %\n");
 });
 
-command!(cap_start, |engine| {
+command!(cap_start, |_engine| {
     *CAPTURING.write().unwrap() = true;
 });
 
-command!(cap_stop, |engine| {
+command!(cap_stop, |_engine| {
     *CAPTURING.write().unwrap() = false;
 });
