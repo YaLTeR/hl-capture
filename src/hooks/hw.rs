@@ -7,6 +7,8 @@ use gl;
 use gl::types::*;
 use std::cmp;
 use std::ffi::{CStr, CString};
+use std::mem;
+use std::ptr;
 use std::sync::{Once, ONCE_INIT, RwLock};
 
 use command;
@@ -18,6 +20,7 @@ use sdl;
 
 lazy_static!{
     pub static ref POINTERS: RwLock<Pointers> = RwLock::new(Pointers::default());
+    static ref CAPTURING: RwLock<bool> = RwLock::new(false);
 }
 
 #[derive(Debug, Default)]
@@ -36,6 +39,9 @@ pub struct Pointers {
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
     GL_EndRendering: Function<unsafe extern "C" fn()>,
+    VideoMode_GetCurrentVideoMode: Function<unsafe extern "C" fn(*mut c_int,
+                                                                 *mut c_int,
+                                                                 *mut c_int)>,
 
     s_BackBufferFBO: Option<*mut FBO_Container_t>,
 }
@@ -116,6 +122,14 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// If framebuffers aren't used, simply flips the screen.
 #[no_mangle]
 pub unsafe extern "C" fn GL_EndRendering() {
+    if *CAPTURING.read().unwrap() {
+        let (w, h) = get_resolution();
+        let buf = encode::get_buffer((w, h));
+        gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
+                       gl::RGBA, gl::UNSIGNED_BYTE,
+                       buf.as_mut_ptr() as _);
+    }
+
     real!(GL_EndRendering)();
 
     // TODO: check if we're called from SCR_UpdateScreen().
@@ -141,6 +155,7 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Con_Printf, "Con_Printf");
         find!(pointers, hw, Memory_Init, "Memory_Init");
         find!(pointers, hw, GL_EndRendering, "GL_EndRendering");
+        find!(pointers, hw, VideoMode_GetCurrentVideoMode, "VideoMode_GetCurrentVideoMode");
 
         pointers.s_BackBufferFBO = Some(hw.sym("s_BackBufferFBO")
                 .chain_err(|| "couldn't find s_BackBufferFBO")? as _);
@@ -203,6 +218,22 @@ pub unsafe fn cmd_argv(index: u32) -> String {
     CStr::from_ptr(arg).to_string_lossy().into_owned()
 }
 
+/// Returns the current game resolution.
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
+pub unsafe fn get_resolution() -> (u32, u32) {
+    let mut width = mem::uninitialized();
+    let mut height = mem::uninitialized();
+
+    real!(VideoMode_GetCurrentVideoMode)(&mut width, &mut height, ptr::null_mut());
+
+    width = cmp::max(0, width);
+    height = cmp::max(0, height);
+
+    (width as u32, height as u32)
+}
+
 command!(cap_test, |engine| {
     let args = engine.args();
 
@@ -219,4 +250,12 @@ command!(cap_test, |engine| {
 
 command!(cap_another_test, |engine| {
     engine.con_print("Hello! %s %d %\n");
+});
+
+command!(cap_start, |engine| {
+    *CAPTURING.write().unwrap() = true;
+});
+
+command!(cap_stop, |engine| {
+    *CAPTURING.write().unwrap() = false;
 });

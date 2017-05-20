@@ -1,6 +1,6 @@
 use error_chain::ChainedError;
 use ffmpeg;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use errors::*;
 
@@ -226,4 +226,27 @@ fn test_video_output() -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn get_buffer((width, height): (u32, u32)) -> &'static mut [(u8, u8, u8, u8)] {
+    // TODO
+    use std::mem;
+
+    lazy_static! {
+        static ref FRAME: RwLock<ffmpeg::frame::Video> = RwLock::new(
+            ffmpeg::frame::Video::empty()
+        );
+    }
+
+    let mut frame = FRAME.write().unwrap();
+
+    if frame.width() != width || frame.height() != height {
+        println!("Changing resolution from {:?} to {:?}.",
+                 (frame.width(), frame.height()),
+                 (width, height));
+
+        *frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGBA, width, height);
+    }
+
+    unsafe { mem::transmute(frame.plane_mut::<(u8, u8, u8, u8)>(0)) }
 }
