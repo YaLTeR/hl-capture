@@ -1,0 +1,62 @@
+sudo: false
+
+language: rust
+
+rust:
+  - stable
+  - beta
+  - nightly
+
+matrix:
+  allow_failures:
+    - rust: nightly
+
+addons:
+  apt:
+    packages:
+      - gcc-multilib
+      - autoconf
+      - automake
+      - libtool
+      - yasm
+      - zlib1g-dev:i386
+
+env:
+  global:
+    - RUST_BACKTRACE=1
+    - PKG_CONFIG_ALLOW_CROSS=1
+
+cache:
+  directories:
+    - $HOME/ffmpeg
+    - $HOME/.cargo
+
+before_install:
+  - bash .travis/install-ffmpeg.sh
+  - ls -R "$HOME/ffmpeg"
+  - export PKG_CONFIG_PATH="$HOME/ffmpeg/lib/pkgconfig"
+  - export LD_LIBRARY_PATH="$HOME/ffmpeg/lib"
+
+install:
+  - rustup target add i686-unknown-linux-gnu
+
+script:
+  - cargo build --verbose
+
+  # This rustdoc command requires that only one .rlib is present
+  # in target/i686-unknown-linux-gnu/debug/deps for each crate.
+  # Cargo build and cargo test each generate a set of .rlibs.
+  # Thus, rustdoc has to go after cargo build but before cargo test.
+  - rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments" --crate-name hl_capture src/lib.rs --target i686-unknown-linux-gnu -o docs -L target/i686-unknown-linux-gnu/debug/deps
+  - cp .travis/index.html docs/
+
+  - cargo test --verbose
+
+deploy:
+  provider: pages
+  skip_cleanup: true
+  github_token: $GITHUB_TOKEN
+  local_dir: docs
+  on:
+    branch: ci
+    rust: stable
