@@ -15,9 +15,6 @@ addons:
   apt:
     packages:
       - gcc-multilib
-      - autoconf
-      - automake
-      - libtool
       - yasm
       - zlib1g-dev:i386
 
