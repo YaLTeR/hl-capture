@@ -7,6 +7,7 @@ extern crate ffmpeg;
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;
+extern crate gl;
 
 mod errors {
     // Create the Error, ErrorKind, ResultExt, and Result types.

@@ -92,6 +92,8 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 #[no_mangle]
 pub unsafe extern "C" fn GL_EndRendering() {
     real!(GL_EndRendering)();
+
+    // TODO: check if we're called from SCR_UpdateScreen().
 }
 
 /// Obtains and stores all necessary function and variable addresses.
