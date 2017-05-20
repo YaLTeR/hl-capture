@@ -8,6 +8,10 @@ lazy_static! {
     static ref VIDEO_ENCODER: Mutex<Option<ffmpeg::codec::Video>> = Mutex::new(None);
 }
 
+/// An encoder used to encode a video to a file.
+///
+/// Call `Encoder::start()` to start the encoding, then encode some frames with `Encoder::encode()`.
+/// The encoder will flush and save the output file automatically upon being dropped.
 struct Encoder {
     converter: ffmpeg::software::scaling::Context,
     context: ffmpeg::format::context::Output,
@@ -70,17 +74,17 @@ impl Encoder {
         let packet = ffmpeg::Packet::empty();
 
         Ok(Self {
-            converter,
-            context,
-            encoder,
-            output_frame,
-            packet,
+               converter,
+               context,
+               encoder,
+               output_frame,
+               packet,
 
-            time_base,
-            stream_time_base,
+               time_base,
+               stream_time_base,
 
-            pts: 0,
-        })
+               pts: 0,
+           })
     }
 
     fn encode(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {

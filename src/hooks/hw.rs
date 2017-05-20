@@ -5,7 +5,7 @@ use error_chain::ChainedError;
 use libc::*;
 use std::cmp;
 use std::ffi::{CStr, CString};
-use std::sync::{ Once, ONCE_INIT, RwLock };
+use std::sync::{Once, ONCE_INIT, RwLock};
 
 use command;
 use dl;
@@ -41,12 +41,12 @@ pub struct Pointers {
 /// unloads and reloads hw.so and this function is called again as if it was a fresh start.
 #[export_name = "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"]
 pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
-                                  basedir: *mut c_char,
-                                  cmdline: *mut c_char,
-                                  postRestartCmdLineArgs: *mut c_char,
-                                  launcherFactory: *mut c_void,
-                                  filesystemFactory: *mut c_void)
-                                  -> c_int {
+                                         basedir: *mut c_char,
+                                         cmdline: *mut c_char,
+                                         postRestartCmdLineArgs: *mut c_char,
+                                         launcherFactory: *mut c_void,
+                                         filesystemFactory: *mut c_void)
+                                         -> c_int {
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
     if let Err(ref e) = refresh_pointers().chain_err(|| "error refreshing pointers") {
@@ -56,11 +56,10 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     // Initialize the encoding.
     {
         static INIT: Once = ONCE_INIT;
-        INIT.call_once(|| {
-            if let Err(ref e) = encode::initialize().chain_err(|| "error initializing encoding") {
-                panic!("{}", e.display());
-            }
-        });
+        INIT.call_once(|| if let Err(ref e) = encode::initialize()
+                              .chain_err(|| "error initializing encoding") {
+                           panic!("{}", e.display());
+                       });
     }
 
     let rv = real!(RunListenServer)(instance,
