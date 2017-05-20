@@ -1,1 +1,0 @@
-initSidebarItems({"static":[["COMMANDS",""]],"struct":[["Args","An iterator over the console command arguments."],["COMMANDS",""]],"trait":[["Command",""]]});
