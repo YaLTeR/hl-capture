@@ -26,12 +26,15 @@ env:
 cache:
   directories:
     - $HOME/ffmpeg
+    - $HOME/SDL2
     - $HOME/.cargo
 
 before_install:
   - bash .travis/install-ffmpeg.sh
   - ls -R "$HOME/ffmpeg"
-  - export PKG_CONFIG_PATH="$HOME/ffmpeg/lib/pkgconfig"
+  - bash .travis/install-sdl2.sh
+  - ls -R "$HOME/SDL2"
+  - export PKG_CONFIG_PATH="$HOME/ffmpeg/lib/pkgconfig:$HOME/SDL2/lib/pkgconfig"
   - export LD_LIBRARY_PATH="$HOME/ffmpeg/lib"
 
 install:
