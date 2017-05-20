@@ -20,4 +20,4 @@ libc = "0.2"
 [dependencies.ffmpeg]
 git = "https://github.com/meh/rust-ffmpeg.git"
 default-features = false
-features = ["codec", "format", "software-scaling"]
+features = ["codec", "format", "software-resampling", "software-scaling"]

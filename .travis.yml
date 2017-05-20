@@ -15,7 +15,6 @@ addons:
   apt:
     packages:
       - gcc-multilib
-      - git
       - autoconf
       - automake
       - libtool
@@ -35,6 +34,7 @@ before_install:
   - bash .travis/install-ffmpeg.sh
   - ls -R "$HOME/ffmpeg"
   - export PKG_CONFIG_PATH="$HOME/ffmpeg/lib/pkgconfig"
+  - export LD_LIBRARY_PATH="$HOME/ffmpeg/lib"
 
 install:
   - rustup target add i686-unknown-linux-gnu
