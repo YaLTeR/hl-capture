@@ -125,7 +125,9 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     register_cvars_and_commands();
 
     gl::ReadPixels::load_with(|s| sdl::get_proc_address(s) as _);
-    con_print(&format!("gl::ReadPixels::is_loaded() = {}", gl::ReadPixels::is_loaded()));
+    if !gl::ReadPixels::is_loaded() {
+        panic!("could not load glReadPixels()");
+    }
 }
 
 /// Blits pixels from the framebuffer to screen and flips.
