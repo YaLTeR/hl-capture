@@ -19,7 +19,7 @@ use function::Function;
 use sdl;
 
 lazy_static!{
-    pub static ref POINTERS: RwLock<Pointers> = RwLock::new(Pointers::default());
+    static ref POINTERS: RwLock<Pointers> = RwLock::new(Pointers::default());
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
 }
 
