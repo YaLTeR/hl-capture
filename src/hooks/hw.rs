@@ -95,6 +95,9 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     // Initialize the encoding.
     encode::initialize();
 
+    // Initialize the capturing.
+    capture::initialize();
+
     let rv = real!(RunListenServer)(instance,
                                     basedir,
                                     cmdline,
@@ -129,13 +132,15 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// If framebuffers aren't used, simply flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
-    let (w, h) = get_resolution();
-    let buf = encode::get_buffer((w, h));
-
     if capture::is_capturing() {
+        let (w, h) = get_resolution();
+        let mut frame = capture::get_buffer((w, h));
+
         gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
                        gl::RGB, gl::UNSIGNED_BYTE,
-                       buf.as_mut_ptr() as _);
+                       frame.data_mut(0).as_mut_ptr() as _);
+
+        capture::capture(frame);
     }
 
     real!(Sys_VID_FlipScreen)();

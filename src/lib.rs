@@ -3,6 +3,7 @@
 
 #[macro_use]
 extern crate error_chain;
+#[macro_use]
 extern crate ffmpeg;
 #[macro_use]
 extern crate lazy_static;
@@ -26,6 +27,8 @@ mod hooks {
     pub mod hw;
 }
 mod sdl;
+
+type Frame = ffmpeg::frame::Video;
 
 pub use self::hooks::hw::RunListenServer;
 pub use self::hooks::hw::Memory_Init;

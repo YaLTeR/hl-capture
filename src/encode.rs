@@ -1,6 +1,6 @@
 use error_chain::ChainedError;
 use ffmpeg;
-use std::sync::{Mutex, Once, ONCE_INIT, RwLock};
+use std::sync::{Mutex, Once, ONCE_INIT};
 
 use errors::*;
 
@@ -12,7 +12,7 @@ lazy_static! {
 ///
 /// Call `Encoder::start()` to start the encoding, then encode some frames with `Encoder::encode()`.
 /// The encoder will flush and save the output file automatically upon being dropped.
-struct Encoder {
+pub struct Encoder {
     converter: ffmpeg::software::scaling::Context,
     context: ffmpeg::format::context::Output,
     encoder: ffmpeg::codec::encoder::Video,
@@ -25,11 +25,16 @@ struct Encoder {
     pts: i64,
 }
 
+unsafe impl Send for Encoder {}
+
 impl Encoder {
-    fn start(filename: &str,
-             codec: ffmpeg::codec::Video,
+    pub fn start(filename: &str,
              (width, height): (u32, u32),
              time_base: ffmpeg::Rational) -> Result<Self> {
+        let codec = VIDEO_ENCODER.lock().unwrap();
+        ensure!(codec.is_some(), "video encoder was not set");
+        let codec = codec.unwrap();
+
         let mut context = ffmpeg::format::output(&filename)
             .chain_err(|| "could not create the output context")?;
 
@@ -50,7 +55,7 @@ impl Encoder {
                 encoder.set_format(ffmpeg::format::Pixel::YUV420P);
             }
 
-            let encoder = encoder.open_as(codec)
+            let encoder = encoder.open_as_with(codec, dict!("crf" => "15"))
                 .chain_err(|| "could not open the video encoder")?;
             stream.set_parameters(&encoder);
 
@@ -87,7 +92,7 @@ impl Encoder {
            })
     }
 
-    fn encode(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {
+    pub fn encode(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {
         self.converter.run(frame, &mut self.output_frame)
             .chain_err(|| "could not convert the frame to the correct format")?;
 
@@ -116,6 +121,14 @@ impl Encoder {
 
         Ok(())
     }
+
+    pub fn width(&self) -> u32 {
+        self.encoder.width()
+    }
+
+    pub fn height(&self) -> u32 {
+        self.encoder.height()
+    }
 }
 
 impl Drop for Encoder {
@@ -134,6 +147,9 @@ pub fn initialize() {
         if let Err(ref e) = ffmpeg::init().chain_err(|| "error initializing ffmpeg") {
             panic!("{}", e.display());
         }
+
+        *VIDEO_ENCODER.lock().unwrap() = ffmpeg::encoder::find_by_name("libx264")
+            .and_then(|e| e.video().ok());
     });
 }
 
@@ -195,19 +211,12 @@ command!(cap_test_video_output, |engine| {
 });
 
 fn test_video_output() -> Result<()> {
-    let codec = VIDEO_ENCODER.lock().unwrap();
-
-    ensure!(codec.is_some(), "video encoder was not set");
-
-    let codec = codec.unwrap();
-
     let mut encoder = Encoder::start("/home/yalter/test.mkv",
-                                     codec,
-                                     (1280, 720),
+                                     (1680, 1050),
                                      (1, 60).into())
         .chain_err(|| "could not create the encoder")?;
 
-    let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, 1280, 720);
+    let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, 1680, 1050);
 
     {
         let mut data = frame.plane_mut::<(u8, u8, u8)>(0);
@@ -216,12 +225,16 @@ fn test_video_output() -> Result<()> {
         }
     }
 
+    let linesize = unsafe {
+        (*frame.as_ptr()).linesize[0] / 3
+    };
+
     for f in 0..240 {
         {
             let mut data = frame.plane_mut::<(u8, u8, u8)>(0);
-            for y in 0..720 {
-                data[y * 1280 + f * 2] = (255, 0, 0);
-                data[y * 1280 + f * 2 + 1] = (255, 0, 0);
+            for y in 0..1050 {
+                data[y * linesize as usize + f * 2] = (255, 0, 0);
+                data[y * linesize as usize + f * 2 + 1] = (255, 0, 0);
             }
         }
 
@@ -230,27 +243,4 @@ fn test_video_output() -> Result<()> {
     }
 
     Ok(())
-}
-
-pub fn get_buffer((width, height): (u32, u32)) -> &'static mut [(u8, u8, u8)] {
-    // TODO
-    use std::mem;
-
-    lazy_static! {
-        static ref FRAME: RwLock<ffmpeg::frame::Video> = RwLock::new(
-            ffmpeg::frame::Video::empty()
-        );
-    }
-
-    let mut frame = FRAME.write().unwrap();
-
-    if frame.width() != width || frame.height() != height {
-        println!("Changing resolution from {:?} to {:?}.",
-                 (frame.width(), frame.height()),
-                 (width, height));
-
-        *frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, width, height);
-    }
-
-    unsafe { mem::transmute(frame.plane_mut::<(u8, u8, u8)>(0)) }
 }
