@@ -93,13 +93,7 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     }
 
     // Initialize the encoding.
-    {
-        static INIT: Once = ONCE_INIT;
-        INIT.call_once(|| if let Err(ref e) = encode::initialize()
-                              .chain_err(|| "error initializing encoding") {
-                           panic!("{}", e.display());
-                       });
-    }
+    encode::initialize();
 
     let rv = real!(RunListenServer)(instance,
                                     basedir,
@@ -275,12 +269,4 @@ command!(cap_test, |engine| {
 
 command!(cap_another_test, |engine| {
     engine.con_print("Hello! %s %d %\n");
-});
-
-command!(cap_start, |_engine| {
-    *CAPTURING.write().unwrap() = true;
-});
-
-command!(cap_stop, |_engine| {
-    *CAPTURING.write().unwrap() = false;
 });

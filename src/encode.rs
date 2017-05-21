@@ -1,6 +1,6 @@
 use error_chain::ChainedError;
 use ffmpeg;
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex, Once, ONCE_INIT, RwLock};
 
 use errors::*;
 
@@ -126,11 +126,15 @@ impl Drop for Encoder {
     }
 }
 
-/// Initialize the encoding stuff. Should be called once.
-pub fn initialize() -> Result<()> {
-    ffmpeg::init().chain_err(|| "error initializing ffmpeg")?;
+/// Initialize the encoding stuff.
+pub fn initialize() {
+    static INIT: Once = ONCE_INIT;
 
-    Ok(())
+    INIT.call_once(|| {
+        if let Err(ref e) = ffmpeg::init().chain_err(|| "error initializing ffmpeg") {
+            panic!("{}", e.display());
+        }
+    });
 }
 
 command!(cap_set_video_encoder, |engine| {
