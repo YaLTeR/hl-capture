@@ -134,13 +134,13 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     if capture::is_capturing() {
         let (w, h) = get_resolution();
-        let mut frame = capture::get_buffer((w, h));
+        let mut buf = capture::get_buffer((w, h));
 
         gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
                        gl::RGB, gl::UNSIGNED_BYTE,
-                       frame.data_mut(0).as_mut_ptr() as _);
+                       buf.data.as_mut_ptr() as _);
 
-        capture::capture(frame);
+        capture::capture(buf);
     }
 
     real!(Sys_VID_FlipScreen)();

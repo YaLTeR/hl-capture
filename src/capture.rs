@@ -1,5 +1,6 @@
 use error_chain::ChainedError;
 use ffmpeg;
+use std::ptr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Mutex, RwLock, Once, ONCE_INIT};
 use std::thread;
@@ -14,18 +15,48 @@ lazy_static! {
     static ref ENCODER: Mutex<Option<encode::Encoder>> = Mutex::new(None);
 
     /// Receives frames to write pixels to.
-    static ref FRAME_RECEIVER: Mutex<Option<Receiver<Frame>>> = Mutex::new(None);
+    static ref FRAME_RECEIVER: Mutex<Option<Receiver<Buffer>>> = Mutex::new(None);
 
     /// Sends frames to encode.
-    static ref FRAME_SENDER: Mutex<Option<Sender<Frame>>> = Mutex::new(None);
+    static ref FRAME_SENDER: Mutex<Option<Sender<Buffer>>> = Mutex::new(None);
 }
 
-fn capture_thread(frame_sender: Sender<Frame>, frame_receiver: Receiver<Frame>) {
+pub struct Buffer {
+    pub data: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
+fn capture_thread(frame_sender: Sender<Buffer>, frame_receiver: Receiver<Buffer>) {
     let mut frame = ffmpeg::frame::Video::empty();
+    let mut buf = Buffer {
+        data: Vec::new(),
+        width: 0,
+        height: 0,
+    };
 
     loop {
-        frame_sender.send(frame).unwrap();
-        frame = frame_receiver.recv().unwrap();
+        frame_sender.send(buf).unwrap();
+        buf = frame_receiver.recv().unwrap();
+
+        // Make sure frame is of correct size.
+        if buf.width != frame.width() || buf.height != frame.height() {
+            frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, buf.width, buf.height);
+        }
+
+        // Copy the pixel data into the frame.
+        {
+            let linesize = unsafe { ((*frame.as_ptr()).linesize[0]) as u32 };
+            let mut data = frame.data_mut(0);
+
+            for y in 0..buf.height {
+                unsafe {
+                    ptr::copy_nonoverlapping(buf.data.as_ptr().offset((y * buf.width * 3) as isize),
+                                             data.as_mut_ptr().offset(((buf.height - y - 1) * linesize) as isize),
+                                             (buf.width * 3) as usize);
+                }
+            }
+        }
 
         let mut encoder = ENCODER.lock().unwrap();
 
@@ -73,8 +104,8 @@ fn start_encoder((width, height): (u32, u32)) -> Option<encode::Encoder> {
 pub fn initialize() {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
-        let (tx, rx) = channel::<Frame>();
-        let (tx2, rx2) = channel::<Frame>();
+        let (tx, rx) = channel::<Buffer>();
+        let (tx2, rx2) = channel::<Buffer>();
 
         *FRAME_RECEIVER.lock().unwrap() = Some(rx);
         *FRAME_SENDER.lock().unwrap() = Some(tx2);
@@ -83,22 +114,24 @@ pub fn initialize() {
     });
 }
 
-pub fn get_buffer((width, height): (u32, u32)) -> Frame {
-    let mut frame = FRAME_RECEIVER.lock().unwrap().as_ref().unwrap().recv().unwrap();
+pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
+    let mut buf = FRAME_RECEIVER.lock().unwrap().as_ref().unwrap().recv().unwrap();
 
-    if frame.width() != width || frame.height() != height {
+    if buf.width != width || buf.height != height {
         println!("Changing resolution from {:?} to {:?}.",
-                 (frame.width(), frame.height()),
+                 (buf.width, buf.height),
                  (width, height));
 
-        frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, width, height);
+        buf.data.resize((width * height * 3) as usize, 0);
+        buf.width = width;
+        buf.height = height;
     }
 
-    frame
+    buf
 }
 
-pub fn capture(frame: Frame) {
-    FRAME_SENDER.lock().unwrap().as_ref().unwrap().send(frame).unwrap();
+pub fn capture(buf: Buffer) {
+    FRAME_SENDER.lock().unwrap().as_ref().unwrap().send(buf).unwrap();
 }
 
 pub fn is_capturing() -> bool {
