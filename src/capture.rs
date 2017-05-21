@@ -7,7 +7,6 @@ use std::thread;
 
 use encode;
 use errors::*;
-use Frame;
 
 lazy_static! {
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
@@ -35,8 +34,9 @@ fn capture_thread(frame_sender: Sender<Buffer>, frame_receiver: Receiver<Buffer>
         height: 0,
     };
 
+    frame_sender.send(buf).unwrap();
+
     loop {
-        frame_sender.send(buf).unwrap();
         buf = frame_receiver.recv().unwrap();
 
         // Make sure frame is of correct size.
@@ -58,18 +58,27 @@ fn capture_thread(frame_sender: Sender<Buffer>, frame_receiver: Receiver<Buffer>
             }
         }
 
+        // We're done with buf, now it can receive the next pack of pixels.
+        // TODO: figure out threading, currently this causes one extra frame to be left over,
+        // so the encoder is dropped in the end and then reinitialized for one frame.
+        // frame_sender.send(buf).unwrap();
+
+        // Let's encode the frame we just received.
         let mut encoder = ENCODER.lock().unwrap();
 
+        // If the encoder wasn't initialized or if the frame size changed, initialize it.
         if encoder.as_ref().map_or(true, |enc| {
                 enc.width() != frame.width() || enc.height() != frame.height()
             }) {
             *encoder = start_encoder((frame.width(), frame.height()));
         }
 
+        // If we couldn't initialize the encoder just carry on with the loop.
         if encoder.is_none() {
             continue;
         }
 
+        // Encode the frame.
         if let Err(ref e) = encoder.as_mut().unwrap().encode(&frame)
             .chain_err(|| "could not encode a frame") {
             println!("{}", e.display());
@@ -82,6 +91,9 @@ fn capture_thread(frame_sender: Sender<Buffer>, frame_receiver: Receiver<Buffer>
         if !*CAPTURING.read().unwrap() {
             *encoder = None;
         }
+
+        // TODO: see above.
+        frame_sender.send(buf).unwrap()
     }
 }
 
