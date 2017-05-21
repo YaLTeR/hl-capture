@@ -9,8 +9,9 @@ use std::cmp;
 use std::ffi::{CStr, CString};
 use std::mem;
 use std::ptr;
-use std::sync::{Once, ONCE_INIT, RwLock};
+use std::sync::RwLock;
 
+use capture;
 use command;
 use dl;
 use encode;
@@ -20,7 +21,6 @@ use sdl;
 
 lazy_static!{
     static ref POINTERS: RwLock<Pointers> = RwLock::new(Pointers::default());
-    static ref CAPTURING: RwLock<bool> = RwLock::new(false);
 }
 
 #[derive(Debug, Default)]
@@ -132,7 +132,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     let (w, h) = get_resolution();
     let buf = encode::get_buffer((w, h));
 
-    if *CAPTURING.read().unwrap() {
+    if capture::is_capturing() {
         gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
                        gl::RGB, gl::UNSIGNED_BYTE,
                        buf.as_mut_ptr() as _);

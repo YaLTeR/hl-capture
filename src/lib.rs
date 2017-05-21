@@ -16,6 +16,7 @@ mod errors {
 }
 #[macro_use]
 mod macros;
+mod capture;
 mod command;
 mod dl;
 mod encode;
