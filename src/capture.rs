@@ -35,10 +35,11 @@ pub struct Buffer {
 fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureThreadEvent>) {
     // Send the buffer to the game thread right away.
     buf_sender.send(Buffer {
-        data: Vec::new(),
-        width: 0,
-        height: 0,
-    }).unwrap();
+                        data: Vec::new(),
+                        width: 0,
+                        height: 0,
+                    })
+              .unwrap();
 
     // This is our frame which will only be reallocated on resolution changes.
     let mut frame = ffmpeg::frame::Video::empty();
@@ -52,12 +53,12 @@ fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureTh
         match event_receiver.recv().unwrap() {
             CaptureThreadEvent::CaptureStart => {
                 drop_frames = false;
-            },
+            }
 
             CaptureThreadEvent::CaptureStop => {
                 *ENCODER.lock().unwrap() = None;
                 drop_frames = true;
-            },
+            }
 
             CaptureThreadEvent::Frame(buffer) => {
                 if drop_frames {
@@ -69,7 +70,7 @@ fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureTh
                     drop_frames = true;
                     println!("Encoding error: {}", e.display());
                 }
-            },
+            }
         }
     }
 }
@@ -78,7 +79,10 @@ fn start_encoder((width, height): (u32, u32)) -> Result<encode::Encoder> {
     encode::Encoder::start("/home/yalter/test.mp4", (width, height), (1, 60).into())
 }
 
-fn encode(buf: Buffer, buf_sender: &Sender<Buffer>, frame: &mut ffmpeg::frame::Video) -> Result<()> {
+fn encode(buf: Buffer,
+          buf_sender: &Sender<Buffer>,
+          frame: &mut ffmpeg::frame::Video)
+          -> Result<()> {
     // Make sure frame is of correct size.
     if buf.width != frame.width() || buf.height != frame.height() {
         *frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, buf.width, buf.height);
@@ -92,8 +96,10 @@ fn encode(buf: Buffer, buf_sender: &Sender<Buffer>, frame: &mut ffmpeg::frame::V
         for y in 0..buf.height {
             unsafe {
                 ptr::copy_nonoverlapping(buf.data.as_ptr().offset((y * buf.width * 3) as isize),
-                data.as_mut_ptr().offset(((buf.height - y - 1) * linesize) as isize),
-                (buf.width * 3) as usize);
+                                         data.as_mut_ptr()
+                                             .offset(((buf.height - y - 1) * linesize) as
+                                                     isize),
+                                         (buf.width * 3) as usize);
             }
         }
     }
@@ -105,11 +111,11 @@ fn encode(buf: Buffer, buf_sender: &Sender<Buffer>, frame: &mut ffmpeg::frame::V
     let mut encoder = ENCODER.lock().unwrap();
 
     // If the encoder wasn't initialized or if the frame size changed, initialize it.
-    if encoder.as_ref().map_or(true, |enc| {
-        enc.width() != frame.width() || enc.height() != frame.height()
-    }) {
+    if encoder.as_ref()
+              .map_or(true,
+                      |enc| enc.width() != frame.width() || enc.height() != frame.height()) {
         *encoder = Some(start_encoder((frame.width(), frame.height()))
-            .chain_err(|| "could not start the video encoder")?);
+                            .chain_err(|| "could not start the video encoder")?);
     }
 
     // Encode the frame.
@@ -133,7 +139,9 @@ pub fn initialize() {
 }
 
 pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
-    let mut buf = BUF_RECEIVER.lock().unwrap().as_ref().unwrap().recv().unwrap();
+    let mut buf = BUF_RECEIVER.lock().unwrap()
+        .as_ref().unwrap()
+        .recv().unwrap();
 
     if buf.width != width || buf.height != height {
         println!("Changing resolution from {:?} to {:?}.",
