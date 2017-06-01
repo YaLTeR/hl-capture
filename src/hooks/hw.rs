@@ -125,6 +125,10 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     if !gl::ReadPixels::is_loaded() {
         panic!("could not load glReadPixels()");
     }
+    gl::PixelStorei::load_with(|s| sdl::get_proc_address(s) as _);
+    if !gl::PixelStorei::is_loaded() {
+        panic!("could not load glPixelStorei()");
+    }
 }
 
 /// Flips the screen.
@@ -134,6 +138,10 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         let (w, h) = get_resolution();
         let mut buf = capture::get_buffer((w, h));
 
+        // Our buffer expects 1-byte alignment.
+        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+
+        // Get the pixels!
         gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
                        gl::RGB, gl::UNSIGNED_BYTE,
                        buf.data.as_mut_ptr() as _);
