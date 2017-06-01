@@ -127,9 +127,7 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     }
 }
 
-/// Blits pixels from the framebuffer to screen and flips.
-///
-/// If framebuffers aren't used, simply flips the screen.
+/// Flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     if capture::is_capturing() {
