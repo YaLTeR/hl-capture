@@ -13,11 +13,17 @@ lazy_static! {
 
     static ref ENCODER: Mutex<Option<encode::Encoder>> = Mutex::new(None);
 
-    /// Receives frames to write pixels to.
-    static ref FRAME_RECEIVER: Mutex<Option<Receiver<Buffer>>> = Mutex::new(None);
+    /// Receives buffers to write pixels to.
+    static ref BUF_RECEIVER: Mutex<Option<Receiver<Buffer>>> = Mutex::new(None);
 
-    /// Sends frames to encode.
-    static ref FRAME_SENDER: Mutex<Option<Sender<Buffer>>> = Mutex::new(None);
+    /// Sends events and frames to encode to the capture thread.
+    static ref SEND_TO_CAPTURE_THREAD: Mutex<Option<Sender<CaptureThreadEvent>>> = Mutex::new(None);
+}
+
+enum CaptureThreadEvent {
+    CaptureStart,
+    CaptureStop,
+    Frame(Buffer),
 }
 
 pub struct Buffer {
@@ -26,108 +32,108 @@ pub struct Buffer {
     height: u32,
 }
 
-fn capture_thread(frame_sender: Sender<Buffer>, frame_receiver: Receiver<Buffer>) {
-    let mut frame = ffmpeg::frame::Video::empty();
-    let mut buf = Buffer {
+fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureThreadEvent>) {
+    // Send the buffer to the game thread right away.
+    buf_sender.send(Buffer {
         data: Vec::new(),
         width: 0,
         height: 0,
-    };
+    }).unwrap();
 
-    frame_sender.send(buf).unwrap();
+    // This is our frame which will only be reallocated on resolution changes.
+    let mut frame = ffmpeg::frame::Video::empty();
 
+    // This is set to true on encoding error or cap_stop and reset on cap_start.
+    // When this is true, ignore any received frames.
+    let mut drop_frames = true;
+
+    // Event loop for the capture thread.
     loop {
-        buf = frame_receiver.recv().unwrap();
+        match event_receiver.recv().unwrap() {
+            CaptureThreadEvent::CaptureStart => {
+                drop_frames = false;
+            },
 
-        // Make sure frame is of correct size.
-        if buf.width != frame.width() || buf.height != frame.height() {
-            frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, buf.width, buf.height);
-        }
+            CaptureThreadEvent::CaptureStop => {
+                *ENCODER.lock().unwrap() = None;
+                drop_frames = true;
+            },
 
-        // Copy the pixel data into the frame.
-        {
-            let linesize = unsafe { ((*frame.as_ptr()).linesize[0]) as u32 };
-            let mut data = frame.data_mut(0);
-
-            for y in 0..buf.height {
-                unsafe {
-                    ptr::copy_nonoverlapping(buf.data.as_ptr().offset((y * buf.width * 3) as isize),
-                                             data.as_mut_ptr().offset(((buf.height - y - 1) * linesize) as isize),
-                                             (buf.width * 3) as usize);
+            CaptureThreadEvent::Frame(buffer) => {
+                if drop_frames {
+                    continue;
                 }
-            }
+
+                if let Err(ref e) = encode(buffer, &buf_sender, &mut frame) {
+                    *CAPTURING.write().unwrap() = false;
+                    drop_frames = true;
+                    println!("Encoding error: {}", e.display());
+                }
+            },
         }
-
-        // We're done with buf, now it can receive the next pack of pixels.
-        // TODO: figure out threading, currently this causes one extra frame to be left over,
-        // so the encoder is dropped in the end and then reinitialized for one frame.
-        // frame_sender.send(buf).unwrap();
-
-        // Let's encode the frame we just received.
-        let mut encoder = ENCODER.lock().unwrap();
-
-        // If the encoder wasn't initialized or if the frame size changed, initialize it.
-        if encoder.as_ref().map_or(true, |enc| {
-                enc.width() != frame.width() || enc.height() != frame.height()
-            }) {
-            *encoder = start_encoder((frame.width(), frame.height()));
-        }
-
-        // If we couldn't initialize the encoder just carry on with the loop.
-        if encoder.is_none() {
-            continue;
-        }
-
-        // Encode the frame.
-        if let Err(ref e) = encoder.as_mut().unwrap().encode(&frame)
-            .chain_err(|| "could not encode a frame") {
-            println!("{}", e.display());
-            // TODO: while we were getting here the main thread potentially
-            // got into the CAPTURING if the second time already.
-            *CAPTURING.write().unwrap() = false;
-        };
-
-        // If the capture was stopped, drop the encoder.
-        if !*CAPTURING.read().unwrap() {
-            *encoder = None;
-        }
-
-        // TODO: see above.
-        frame_sender.send(buf).unwrap()
     }
 }
 
-fn start_encoder((width, height): (u32, u32)) -> Option<encode::Encoder> {
-    match encode::Encoder::start("/home/yalter/test.mp4",
-                                 (width, height),
-                                 (1, 60).into()) {
-        Ok(enc) => Some(enc),
-        Err(ref e) => {
-            println!("could not create the encoder: {}", e.display());
-            // TODO: while we were getting here the main thread potentially
-            // got into the CAPTURING if the second time already. This means
-            // that our error message will be printed twice.
-            *CAPTURING.write().unwrap() = false;
-            None
+fn start_encoder((width, height): (u32, u32)) -> Result<encode::Encoder> {
+    encode::Encoder::start("/home/yalter/test.mp4", (width, height), (1, 60).into())
+}
+
+fn encode(buf: Buffer, buf_sender: &Sender<Buffer>, frame: &mut ffmpeg::frame::Video) -> Result<()> {
+    // Make sure frame is of correct size.
+    if buf.width != frame.width() || buf.height != frame.height() {
+        *frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, buf.width, buf.height);
+    }
+
+    // Copy the pixel data into the frame.
+    {
+        let linesize = unsafe { ((*frame.as_ptr()).linesize[0]) as u32 };
+        let mut data = frame.data_mut(0);
+
+        for y in 0..buf.height {
+            unsafe {
+                ptr::copy_nonoverlapping(buf.data.as_ptr().offset((y * buf.width * 3) as isize),
+                data.as_mut_ptr().offset(((buf.height - y - 1) * linesize) as isize),
+                (buf.width * 3) as usize);
+            }
         }
     }
+
+    // We're done with buf, now it can receive the next pack of pixels.
+    buf_sender.send(buf).unwrap();
+
+    // Let's encode the frame we just received.
+    let mut encoder = ENCODER.lock().unwrap();
+
+    // If the encoder wasn't initialized or if the frame size changed, initialize it.
+    if encoder.as_ref().map_or(true, |enc| {
+        enc.width() != frame.width() || enc.height() != frame.height()
+    }) {
+        *encoder = Some(start_encoder((frame.width(), frame.height()))
+            .chain_err(|| "could not start the video encoder")?);
+    }
+
+    // Encode the frame.
+    encoder.as_mut().unwrap().encode(&frame)
+        .chain_err(|| "could not encode the frame")?;
+
+    Ok(())
 }
 
 pub fn initialize() {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
         let (tx, rx) = channel::<Buffer>();
-        let (tx2, rx2) = channel::<Buffer>();
+        let (tx2, rx2) = channel::<CaptureThreadEvent>();
 
-        *FRAME_RECEIVER.lock().unwrap() = Some(rx);
-        *FRAME_SENDER.lock().unwrap() = Some(tx2);
+        *BUF_RECEIVER.lock().unwrap() = Some(rx);
+        *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx2);
 
         thread::spawn(move || capture_thread(tx, rx2));
     });
 }
 
 pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
-    let mut buf = FRAME_RECEIVER.lock().unwrap().as_ref().unwrap().recv().unwrap();
+    let mut buf = BUF_RECEIVER.lock().unwrap().as_ref().unwrap().recv().unwrap();
 
     if buf.width != width || buf.height != height {
         println!("Changing resolution from {:?} to {:?}.",
@@ -143,7 +149,9 @@ pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
 }
 
 pub fn capture(buf: Buffer) {
-    FRAME_SENDER.lock().unwrap().as_ref().unwrap().send(buf).unwrap();
+    SEND_TO_CAPTURE_THREAD.lock().unwrap()
+        .as_ref().unwrap()
+        .send(CaptureThreadEvent::Frame(buf)).unwrap();
 }
 
 pub fn is_capturing() -> bool {
@@ -152,8 +160,16 @@ pub fn is_capturing() -> bool {
 
 command!(cap_start, |_engine| {
     *CAPTURING.write().unwrap() = true;
+
+    SEND_TO_CAPTURE_THREAD.lock().unwrap()
+        .as_ref().unwrap()
+        .send(CaptureThreadEvent::CaptureStart).unwrap();
 });
 
 command!(cap_stop, |_engine| {
     *CAPTURING.write().unwrap() = false;
+
+    SEND_TO_CAPTURE_THREAD.lock().unwrap()
+        .as_ref().unwrap()
+        .send(CaptureThreadEvent::CaptureStop).unwrap();
 });
