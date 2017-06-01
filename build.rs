@@ -33,6 +33,10 @@ fn main() {
     let dest_path = Path::new(&out_dir).join("command_array.rs");
     let mut f = File::create(&dest_path).unwrap();
     write!(f, "{}", command_array).unwrap();
+
+    // Output OUT_DIR for rustdoc in Travis
+    let mut f = File::create("out_dir").unwrap();
+    write!(f, "{}", out_dir).unwrap();
 }
 
 fn get_commands(path: &Path) -> Vec<String> {
@@ -79,7 +83,6 @@ impl CommandVisitor {
 
 impl Visitor for CommandVisitor {
     fn visit_mac(&mut self, mac: &syn::Mac) {
-        println!("Visiting macro: {:?}", mac.path);
         if mac.path == "command".into() {
             if let Some(&syn::TokenTree::Delimited(ref delimited)) = mac.tts.iter().next() {
                 if let Some(&syn::TokenTree::Token(ref token)) = delimited.tts.iter().next() {
