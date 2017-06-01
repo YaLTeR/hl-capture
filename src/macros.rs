@@ -16,6 +16,10 @@ macro_rules! find {
     })
 }
 
+/// Defines console commands.
+///
+/// Commands defined by this macro will be automatically added
+/// to the console command list and registered in the game.
 macro_rules! command {
     ($name:ident, $callback:expr) => (
         #[allow(non_camel_case_types)]
