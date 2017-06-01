@@ -13,9 +13,9 @@ fn main() {
     let mut commands = Vec::new();
 
     for entry in walkdir::WalkDir::new("src")
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| !e.file_type().is_dir()) {
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| !e.file_type().is_dir()) {
         let mut path = String::new();
 
         for name in entry.path().with_extension("").iter().skip(1) {
@@ -23,8 +23,8 @@ fn main() {
         }
 
         commands.extend(get_commands(entry.path())
-            .into_iter()
-            .map(|c| format!("{}::{}", &path, c)))
+                            .into_iter()
+                            .map(|c| format!("{}::{}", &path, c)))
     }
 
     let command_array = make_array(commands);
@@ -41,7 +41,10 @@ fn main() {
 
 fn get_commands(path: &Path) -> Vec<String> {
     let mut source = String::new();
-    File::open(path).unwrap().read_to_string(&mut source).unwrap();
+    File::open(path)
+        .unwrap()
+        .read_to_string(&mut source)
+        .unwrap();
 
     let _crate = syn::parse_crate(&source).expect("Error parsing the code");
 
@@ -75,9 +78,7 @@ struct CommandVisitor {
 
 impl CommandVisitor {
     fn new() -> Self {
-        Self {
-            commands: Vec::new(),
-        }
+        Self { commands: Vec::new() }
     }
 }
 
