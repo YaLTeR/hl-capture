@@ -46,12 +46,14 @@ fn get_commands(path: &Path) -> Vec<String> {
         .read_to_string(&mut source)
         .unwrap();
 
-    let _crate = syn::parse_crate(&source).expect("Error parsing the code");
+    if let Ok(_crate) = syn::parse_crate(&source) {
+        let mut visitor = CommandVisitor::new();
+        visitor.visit_crate(&_crate);
 
-    let mut visitor = CommandVisitor::new();
-    visitor.visit_crate(&_crate);
-
-    visitor.commands
+        visitor.commands
+    } else {
+        Vec::new()
+    }
 }
 
 fn make_array(commands: Vec<String>) -> String {
