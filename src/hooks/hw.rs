@@ -188,7 +188,7 @@ fn reset_pointers() {
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
 unsafe fn register_cvars_and_commands() {
-    for cmd in command::COMMANDS.read().unwrap().iter() {
+    for cmd in command::COMMANDS.iter() {
         register_command(cmd.name(), cmd.callback());
     }
 }

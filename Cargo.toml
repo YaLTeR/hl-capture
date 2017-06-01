@@ -2,6 +2,7 @@
 name = "hl-capture"
 version = "0.1.0"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
+build = "build.rs"
 
 [lib]
 crate-type = ["cdylib"]
@@ -26,3 +27,7 @@ features = ["codec", "format", "software-resampling", "software-scaling"]
 [dependencies.sdl2-sys]
 version = "0.30"
 features = ["pkg-config"]
+
+[build-dependencies]
+syn = { version = "0.11", features = ["full", "visit"] }
+walkdir = "1"

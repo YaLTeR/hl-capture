@@ -1,10 +1,6 @@
-use std::sync::RwLock;
-
 use engine;
 
-lazy_static! {
-    pub static ref COMMANDS: RwLock<Vec<Box<Command>>> = RwLock::new(Vec::new());
-}
+include!(concat!(env!("OUT_DIR"), "/command_array.rs"));
 
 /// An iterator over the console command arguments.
 pub struct Args<'a> {

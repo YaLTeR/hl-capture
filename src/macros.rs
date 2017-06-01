@@ -19,7 +19,7 @@ macro_rules! find {
 macro_rules! command {
     ($name:ident, $callback:expr) => (
         #[allow(non_camel_case_types)]
-        struct $name;
+        pub struct $name;
 
         impl $name {
             // This will get called by the engine, in main game thread.
@@ -30,16 +30,6 @@ macro_rules! command {
                 let engine = ::engine::Engine::new();
 
                 F(engine);
-            }
-
-            // This will be called at .so init time. Add this command to the global list.
-            // It shouldn't be called otherwise.
-            #[allow(dead_code)]
-            extern "C" fn __initialize() {
-                #[link_section=".init_array"]
-                static INITIALIZE: extern "C" fn() = $name::__initialize;
-
-                ::command::COMMANDS.write().unwrap().push(Box::new($name));
             }
         }
 
