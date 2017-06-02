@@ -57,7 +57,7 @@ fn get_commands(path: &Path) -> Vec<String> {
 }
 
 fn make_array(commands: Vec<String>) -> String {
-    let mut buf = format!("pub static COMMANDS: [&Command; {}] = [", commands.len());
+    let mut buf = format!("pub const COMMANDS: [&Command; {}] = [", commands.len());
 
     let mut iter = commands.into_iter();
 
