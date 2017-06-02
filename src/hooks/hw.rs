@@ -45,7 +45,6 @@ pub struct Pointers {
     VideoMode_IsWindowed: Function<unsafe extern "C" fn() -> c_int>,
 
     window_rect: Option<*mut RECT>,
-    s_BackBufferFBO: Option<*mut FBO_Container_t>,
 }
 
 // TODO: think about how to deal with unsafety here.
@@ -62,15 +61,6 @@ struct RECT {
     right: c_int,
     top: c_int,
     bottom: c_int,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-struct FBO_Container_t {
-    s_hBackBufferFBO: GLuint,
-    s_hBackBufferCB: GLuint,
-    s_hBackBufferDB: GLuint,
-    s_hBackBufferTex: GLuint,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -152,8 +142,6 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     real!(Sys_VID_FlipScreen)();
 
     // TODO: check if we're called from SCR_UpdateScreen().
-
-    // println!("s_BackBufferFBO: {:?}", *POINTERS.read().unwrap().s_BackBufferFBO.unwrap());
 }
 
 /// Obtains and stores all necessary function and variable addresses.
@@ -179,8 +167,6 @@ fn refresh_pointers() -> Result<()> {
 
         pointers.window_rect = Some(hw.sym("window_rect")
                 .chain_err(|| "couldn't find window_rect")? as _);
-        pointers.s_BackBufferFBO = Some(hw.sym("s_BackBufferFBO")
-                .chain_err(|| "couldn't find s_BackBufferFBO")? as _);
     }
 
     Ok(())
