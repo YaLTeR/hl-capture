@@ -1,5 +1,5 @@
 use error_chain::ChainedError;
-use ffmpeg::format;
+use ffmpeg::{format, Rational};
 use ffmpeg::frame::Video as VideoFrame;
 use fine_grained::Stopwatch;
 use std::cell::RefCell;
@@ -27,8 +27,15 @@ thread_local! {
     static STOPWATCH: RefCell<Option<Stopwatch>> = RefCell::new(None);
 }
 
+struct CaptureParameters {
+    filename: String,
+    time_base: Rational,
+    crf: String,
+    preset: String,
+}
+
 enum CaptureThreadEvent {
-    CaptureStart,
+    CaptureStart(CaptureParameters),
     CaptureStop,
     Frame(Buffer),
 }
@@ -97,11 +104,15 @@ fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureTh
     // When this is true, ignore any received frames.
     let mut drop_frames = true;
 
+    // Encoding parameters, set on CaptureStart.
+    let mut parameters = None;
+
     // Event loop for the capture thread.
     loop {
         match event_receiver.recv().unwrap() {
-            CaptureThreadEvent::CaptureStart => {
+            CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
+                parameters = Some(params);
             }
 
             CaptureThreadEvent::CaptureStop => {
@@ -114,7 +125,10 @@ fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureTh
                     continue;
                 }
 
-                if let Err(ref e) = encode(buffer, &buf_sender, &mut frame) {
+                if let Err(ref e) = encode(buffer,
+                                           &buf_sender,
+                                           parameters.as_ref().unwrap(),
+                                           &mut frame) {
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
                     println!("Encoding error: {}", e.display());
@@ -124,18 +138,21 @@ fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureTh
     }
 }
 
-cvar!(cap_fps, "60");
-cvar!(cap_filename, "capture.mp4");
-
-fn start_encoder((width, height): (u32, u32)) -> Result<encode::Encoder> {
-    // TODO: figure out a safe way of using CVars in threads other than the game thread.
-    encode::Encoder::start(unsafe { &cap_filename.to_string()? },
+fn start_encoder(filename: &str,
+                 (width, height): (u32, u32),
+                 time_base: Rational,
+                 crf: &str,
+                 preset: &str) -> Result<encode::Encoder> {
+    encode::Encoder::start(filename,
                            (width, height),
-                           (1, unsafe { cap_fps.parse()? }).into())
+                           time_base,
+                           crf,
+                           preset)
 }
 
 fn encode(buf: Buffer,
           buf_sender: &Sender<Buffer>,
+          parameters: &CaptureParameters,
           frame: &mut VideoFrame)
           -> Result<()> {
     buf.copy_to_frame(frame);
@@ -150,7 +167,11 @@ fn encode(buf: Buffer,
     if encoder.as_ref()
               .map_or(true,
                       |enc| enc.width() != frame.width() || enc.height() != frame.height()) {
-        *encoder = Some(start_encoder((frame.width(), frame.height()))
+        *encoder = Some(start_encoder(&parameters.filename,
+                                      (frame.width(), frame.height()),
+                                      parameters.time_base,
+                                      &parameters.crf,
+                                      &parameters.preset)
                             .chain_err(|| "could not start the video encoder")?);
     }
 
@@ -207,12 +228,42 @@ pub fn capture_block_end() {
     });
 }
 
-command!(cap_start, |_engine| {
+command!(cap_start, |engine| {
+    let mut parameters = CaptureParameters {
+        filename: String::new(),
+        time_base: Rational::new(1, 1),
+        crf: String::new(),
+        preset: String::new(),
+    };
+
+    cap_filename.with(|c| parameters.filename = engine.cvar_to_string(c).unwrap());
+    cap_fps.with(|c| match engine.cvar_parse(c) {
+        Ok(fps) => parameters.time_base = (1, fps).into(),
+        Err(_) => {
+            engine.con_print("Invalid cap_fps.\n");
+            return;
+        }
+    });
+    cap_crf.with(|c| match engine.cvar_parse(c) {
+        Ok(crf) => parameters.crf = crf,
+        Err(_) => {
+            engine.con_print("Invalid cap_crf.\n");
+            return;
+        }
+    });
+    cap_preset.with(|c| match engine.cvar_parse(c) {
+        Ok(preset) => parameters.preset = preset,
+        Err(_) => {
+            engine.con_print("Invalid cap_preset.\n");
+            return;
+        }
+    });
+
     *CAPTURING.write().unwrap() = true;
 
     SEND_TO_CAPTURE_THREAD.lock().unwrap()
         .as_ref().unwrap()
-        .send(CaptureThreadEvent::CaptureStart).unwrap();
+        .send(CaptureThreadEvent::CaptureStart(parameters)).unwrap();
 
     STOPWATCH.with(|sw| *sw.borrow_mut() = Some(Stopwatch::new()));
 });
@@ -235,3 +286,8 @@ command!(cap_stop, |engine| {
         }
     });
 });
+
+cvar!(cap_crf, "15");
+cvar!(cap_filename, "capture.mp4");
+cvar!(cap_fps, "60");
+cvar!(cap_preset, "veryfast");

@@ -8,9 +8,6 @@ lazy_static! {
     static ref VIDEO_ENCODER: Mutex<Option<ffmpeg::codec::Video>> = Mutex::new(None);
 }
 
-cvar!(cap_crf, "15");
-cvar!(cap_preset, "veryfast");
-
 /// An encoder used to encode a video to a file.
 ///
 /// Call `Encoder::start()` to start the encoding, then encode some frames with `Encoder::encode()`.
@@ -32,8 +29,10 @@ unsafe impl Send for Encoder {}
 
 impl Encoder {
     pub fn start(filename: &str,
-             (width, height): (u32, u32),
-             time_base: ffmpeg::Rational) -> Result<Self> {
+                 (width, height): (u32, u32),
+                 time_base: ffmpeg::Rational,
+                 crf: &str,
+                 preset: &str) -> Result<Self> {
         let codec = VIDEO_ENCODER.lock().unwrap();
         ensure!(codec.is_some(), "video encoder was not set");
         let codec = codec.unwrap();
@@ -57,10 +56,6 @@ impl Encoder {
             } else {
                 encoder.set_format(ffmpeg::format::Pixel::YUV420P);
             }
-
-            // TODO: figure out a safe way of accessing cvars.
-            let crf = unsafe { cap_crf.to_string()? };
-            let preset = unsafe { cap_preset.to_string()? };
 
             let encoder = encoder.open_as_with(codec, dict!("crf" => &crf,
                                                             "preset" => &preset))
@@ -204,51 +199,51 @@ command!(cap_set_video_encoder, |engine| {
     }
 });
 
-command!(cap_test_video_output, |engine| {
-    if VIDEO_ENCODER.lock().unwrap().is_none() {
-        engine.con_print("Please set the video encoder with cap_set_video_encoder.\n");
-        return;
-    }
-
-    if let Err(ref e) = test_video_output().chain_err(|| "error in test_video_output()") {
-        engine.con_print(&format!("{}", e.display()));
-        return;
-    }
-
-    engine.con_print("Done!\n");
-});
-
-fn test_video_output() -> Result<()> {
-    let mut encoder = Encoder::start("/home/yalter/test.mkv",
-                                     (1680, 1050),
-                                     (1, 60).into())
-        .chain_err(|| "could not create the encoder")?;
-
-    let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, 1680, 1050);
-
-    {
-        let mut data = frame.plane_mut::<(u8, u8, u8)>(0);
-        for pixel in data.iter_mut() {
-            *pixel = (0, 255, 0);
-        }
-    }
-
-    let linesize = unsafe {
-        (*frame.as_ptr()).linesize[0] / 3
-    };
-
-    for f in 0..240 {
-        {
-            let mut data = frame.plane_mut::<(u8, u8, u8)>(0);
-            for y in 0..1050 {
-                data[y * linesize as usize + f * 2] = (255, 0, 0);
-                data[y * linesize as usize + f * 2 + 1] = (255, 0, 0);
-            }
-        }
-
-        encoder.encode(&frame)
-            .chain_err(|| "could not encode a frame")?;
-    }
-
-    Ok(())
-}
+// command!(cap_test_video_output, |engine| {
+//     if VIDEO_ENCODER.lock().unwrap().is_none() {
+//         engine.con_print("Please set the video encoder with cap_set_video_encoder.\n");
+//         return;
+//     }
+//
+//     if let Err(ref e) = test_video_output().chain_err(|| "error in test_video_output()") {
+//         engine.con_print(&format!("{}", e.display()));
+//         return;
+//     }
+//
+//     engine.con_print("Done!\n");
+// });
+//
+// fn test_video_output() -> Result<()> {
+//     let mut encoder = Encoder::start("/home/yalter/test.mkv",
+//                                      (1680, 1050),
+//                                      (1, 60).into())
+//         .chain_err(|| "could not create the encoder")?;
+//
+//     let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, 1680, 1050);
+//
+//     {
+//         let mut data = frame.plane_mut::<(u8, u8, u8)>(0);
+//         for pixel in data.iter_mut() {
+//             *pixel = (0, 255, 0);
+//         }
+//     }
+//
+//     let linesize = unsafe {
+//         (*frame.as_ptr()).linesize[0] / 3
+//     };
+//
+//     for f in 0..240 {
+//         {
+//             let mut data = frame.plane_mut::<(u8, u8, u8)>(0);
+//             for y in 0..1050 {
+//                 data[y * linesize as usize + f * 2] = (255, 0, 0);
+//                 data[y * linesize as usize + f * 2 + 1] = (255, 0, 0);
+//             }
+//         }
+//
+//         encoder.encode(&frame)
+//             .chain_err(|| "could not encode a frame")?;
+//     }
+//
+//     Ok(())
+// }

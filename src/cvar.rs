@@ -1,91 +1,112 @@
 use libc::*;
-use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::str::FromStr;
 
+use engine::Engine;
 use errors::*;
-use hooks::hw;
 
 include!(concat!(env!("OUT_DIR"), "/cvar_array.rs"));
 
-pub const EMPTY_CVAR: CVar = CVar {
-    engine_cvar: cvar_t {
-        name: 0 as *const _,
-        string: 0 as *mut _,
-        flags: 0,
-        value: 0f32,
-        next: 0 as *mut _,
-    },
-    default_value: "",
-    name: "",
+pub const EMPTY_CVAR_T: cvar_t = cvar_t {
+    name: 0 as *const _,
+    string: 0 as *mut _,
+    flags: 0,
+    value: 0f32,
+    next: 0 as *mut _,
 };
 
 #[repr(C)]
 pub struct cvar_t {
-    name: *const c_char,
-    string: *mut c_char,
+    pub name: *const c_char,
+    pub string: *mut c_char,
     flags: c_int,
     value: c_float,
     next: *mut cvar_t,
 }
 
-// TODO: figure out the correct way of dealing with unsafety.
-// The problem here is that when we access cvars they could be
-// modified by the game thread at the same time.
-unsafe impl Sync for cvar_t {}
-
 // Fields are public for the cvar! macro. const fn would really help here.
 pub struct CVar {
-    pub engine_cvar: cvar_t,
+    pub engine_cvar: *mut cvar_t,
     pub default_value: &'static str,
     pub name: &'static str,
 }
 
 impl CVar {
-    /// Registers this console variable.
+    /// Retrieves a reference to the engine CVar.
     ///
     /// # Safety
     /// Unsafe because this function should only be called from the main game thread.
-    pub unsafe fn register(&mut self) -> Result<()> {
-        if self.engine_cvar.name.is_null() {
-            let name_cstring = CString::new(self.name)
+    /// You should also ensure that you don't call any engine functions while holding
+    /// this reference, because the game also has a mutable reference to this CVar.
+    unsafe fn get_engine_cvar(&self) -> Result<&cvar_t> {
+        ensure!(!self.engine_cvar.is_null(), "engine_cvar is null");
+
+        Ok(&*self.engine_cvar)
+    }
+
+    /// Retrieves a mutable reference to the engine CVar.
+    ///
+    /// # Safety
+    /// Unsafe because this function should only be called from the main game thread.
+    /// You should also ensure that you don't call any engine functions while holding
+    /// this reference, because the game also has a mutable reference to this CVar.
+    unsafe fn get_engine_cvar_mut(&self) -> Result<&mut cvar_t> {
+        ensure!(!self.engine_cvar.is_null(), "engine_cvar is null");
+
+        Ok(&mut *self.engine_cvar)
+    }
+
+    /// Registers this console variable.
+    pub fn register(&self, engine: &Engine) -> Result<()> {
+        let ptr = {
+            let engine_cvar = unsafe { self.get_engine_cvar_mut()? };
+
+            if engine_cvar.name.is_null() {
+                let name_cstring = CString::new(self.name)
+                    .chain_err(|| "could not convert CVar name to CString")?;
+
+                // HACK: leak name_cstring.
+                engine_cvar.name = name_cstring.into_raw();
+            }
+
+            // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
+            let default_value_cstring = CString::new(self.default_value)
                 .chain_err(|| "could not convert CVar name to CString")?;
 
-            // HACK: leak name_cstring. I don't see a better way of handling this currently,
-            // I cannot store this CString inside CVar (because I can't initialize it without
-            // calling CString::new()), and destructors aren't run for static muts anyway.
-            self.engine_cvar.name = name_cstring.into_raw();
-        }
+            let ptr = default_value_cstring.into_raw();
+            engine_cvar.string = ptr;
+            ptr
+        };
 
-        // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
-        let default_value_cstring = CString::new(self.default_value)
-            .chain_err(|| "could not convert CVar name to CString")?;
-
-        let ptr = default_value_cstring.into_raw();
-        self.engine_cvar.string = ptr;
-
-        hw::register_variable(&mut self.engine_cvar);
+        engine.register_variable(self).chain_err(|| "could not register the variable")?;
 
         // Free that CString from above.
-        CString::from_raw(ptr);
+        unsafe { CString::from_raw(ptr) };
 
         Ok(())
     }
 
+    /// Returns the string this variable is set to.
+    ///
+    /// # Safety
+    /// Unsafe because this function should only be called from the main game thread.
+    pub unsafe fn to_string(&self) -> Result<String> {
+        let engine_cvar = self.get_engine_cvar()?;
+        ensure!(!engine_cvar.string.is_null(), "the CVar string pointer was null");
+
+        Ok(CStr::from_ptr(engine_cvar.string).to_string_lossy().into_owned())
+    }
+
     /// Tries parsing this variable's value to the desired type.
-    pub fn parse<T>(&self) -> Result<T>
+    ///
+    /// # Safety
+    /// Unsafe because this function should only be called from the main game thread.
+    pub unsafe fn parse<T>(&self) -> Result<T>
         where T: FromStr,
               <T as FromStr>::Err: ::std::error::Error + Send + 'static {
         let string = self.to_string()
             .chain_err(|| "could not get this CVar's string value")?;
         string.parse()
             .chain_err(|| "could not convert the CVar string to the desired type")
-    }
-
-    /// Returns the string this variable is set to.
-    pub fn to_string(&self) -> Result<Cow<str>> {
-        ensure!(!self.engine_cvar.string.is_null(), "the CVar string pointer was null");
-
-        Ok(unsafe { CStr::from_ptr(self.engine_cvar.string) }.to_string_lossy())
     }
 }

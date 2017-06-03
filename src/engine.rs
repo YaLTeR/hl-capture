@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
+use std::str::FromStr;
 
+use errors::*;
 use command;
+use cvar::CVar;
 use hooks::hw;
 
 /// A "container" for unsafe engine functions.
@@ -41,5 +44,30 @@ impl Engine {
     /// Returns the console command argument with the given index.
     pub fn cmd_argv(&self, index: u32) -> String {
         unsafe { hw::cmd_argv(index) }
+    }
+
+    /// Registers the given console variable.
+    pub fn register_variable(&self, cvar: &CVar) -> Result<()> {
+        ensure!(!cvar.engine_cvar.is_null(), "attempted to register a null variable");
+
+        let mut engine_cvar = unsafe { &mut *cvar.engine_cvar };
+        ensure!(!engine_cvar.name.is_null(), "attempted to register a variable with null name");
+        ensure!(!engine_cvar.string.is_null(), "attempted to register a variable with null string");
+
+        unsafe { hw::register_variable(&mut engine_cvar); }
+
+        Ok(())
+    }
+
+    /// Returns the string this variable is set to.
+    pub fn cvar_to_string(&self, cvar: &CVar) -> Result<String> {
+        unsafe { cvar.to_string() }
+    }
+
+    /// Tries parsing this variable's value to the desired type.
+    pub fn cvar_parse<T>(&self, cvar: &CVar) -> Result<T>
+        where T: FromStr,
+              <T as FromStr>::Err: ::std::error::Error + Send + 'static {
+        unsafe { cvar.parse() }
     }
 }

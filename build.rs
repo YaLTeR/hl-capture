@@ -98,20 +98,20 @@ fn make_command_array(commands: Vec<String>) -> String {
 }
 
 fn make_cvar_array(cvars: Vec<String>) -> String {
-    let mut buf = format!("thread_local! {{\n\
-                               pub static CVARS: [*mut CVar; {}] = unsafe {{ [", cvars.len());
+    let mut buf = format!("pub static CVARS: [&::std::thread::LocalKey<CVar>; {}] = [",
+                          cvars.len());
 
     let mut iter = cvars.into_iter();
 
     if let Some(first) = iter.next() {
-        buf.push_str(&format!("&mut {}", first));
+        buf.push_str(&format!("&{}", first));
     }
 
     for cvar in iter {
-        buf.push_str(&format!(", &mut {}", cvar));
+        buf.push_str(&format!(", &{}", cvar));
     }
 
-    buf.push_str("] };\n}");
+    buf.push_str("];");
 
     buf
 }

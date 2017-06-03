@@ -16,6 +16,7 @@ use command;
 use cvar;
 use dl;
 use encode;
+use engine::Engine;
 use errors::*;
 use function::Function;
 use sdl;
@@ -193,14 +194,15 @@ unsafe fn register_cvars_and_commands() {
         register_command(cmd.name(), cmd.callback());
     }
 
-    cvar::CVARS.with(|cvars| {
-        for &cvar in cvars.iter() {
-            if let Err(ref e) = (*cvar).register()
-                                       .chain_err(|| "error registering a console variable") {
+    let engine = Engine::new();
+    for cvar in cvar::CVARS.iter() {
+        cvar.with(|cvar| {
+            if let Err(ref e) = cvar.register(&engine)
+                                    .chain_err(|| "error registering a console variable") {
                 panic!("{}", e.display());
             }
-        }
-    });
+        });
+    }
 }
 
 /// Registers a console command.
