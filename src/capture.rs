@@ -201,6 +201,8 @@ pub fn capture_block_end() {
     });
 }
 
+cvar!(cap_fps, "60");
+
 command!(cap_start, |_engine| {
     *CAPTURING.write().unwrap() = true;
 

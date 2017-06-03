@@ -13,6 +13,7 @@ use std::sync::RwLock;
 
 use capture;
 use command;
+use cvar;
 use dl;
 use encode;
 use errors::*;
@@ -37,6 +38,7 @@ pub struct Pointers {
     Cmd_Argc: Function<unsafe extern "C" fn() -> c_int>,
     Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
+    Cvar_RegisterVariable: Function<unsafe extern "C" fn(*mut cvar::cvar_t)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
     Sys_VID_FlipScreen: Function<unsafe extern "C" fn()>,
     VideoMode_GetCurrentVideoMode: Function<unsafe extern "C" fn(*mut c_int,
@@ -164,6 +166,7 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Cmd_Argc, "Cmd_Argc");
         find!(pointers, hw, Cmd_Argv, "Cmd_Argv");
         find!(pointers, hw, Con_Printf, "Con_Printf");
+        find!(pointers, hw, Cvar_RegisterVariable, "Cvar_RegisterVariable");
         find!(pointers, hw, Memory_Init, "Memory_Init");
         find!(pointers, hw, Sys_VID_FlipScreen, "_Z18Sys_VID_FlipScreenv");
         find!(pointers, hw, VideoMode_GetCurrentVideoMode, "VideoMode_GetCurrentVideoMode");
@@ -189,6 +192,15 @@ unsafe fn register_cvars_and_commands() {
     for cmd in command::COMMANDS.iter() {
         register_command(cmd.name(), cmd.callback());
     }
+
+    cvar::CVARS.with(|cvars| {
+        for &cvar in cvars.iter() {
+            if let Err(ref e) = (*cvar).register()
+                                       .chain_err(|| "error registering a console variable") {
+                panic!("{}", e.display());
+            }
+        }
+    });
 }
 
 /// Registers a console command.
@@ -197,6 +209,14 @@ unsafe fn register_cvars_and_commands() {
 /// Unsafe because this function should only be called from the main game thread.
 unsafe fn register_command(name: &'static [u8], callback: unsafe extern "C" fn()) {
     real!(Cmd_AddCommand)(name as *const _ as *const _, callback as *mut c_void);
+}
+
+/// Registers a console variable.
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
+pub unsafe fn register_variable(cvar: &mut cvar::cvar_t) {
+    real!(Cvar_RegisterVariable)(cvar);
 }
 
 /// Prints the given string to the game console.

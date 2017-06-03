@@ -55,6 +55,21 @@ macro_rules! command {
     )
 }
 
+/// Defines console variables.
+///
+/// Variables defined by this macro will be automatically added
+/// to the console command list and registered in the game.
+macro_rules! cvar {
+    ($name:ident, $default_value:expr) => (
+        #[allow(non_upper_case_globals)]
+        pub static mut $name: ::cvar::CVar = ::cvar::CVar {
+            default_value: "60",
+            name: "cap_fps",
+            .. ::cvar::EMPTY_CVAR
+        };
+    )
+}
+
 macro_rules! gen_function_impls {
     (@make_impl ($($extern_type:tt)*) ($($arg_name:ident : $arg_type:ident),*)) => (
         impl<R $(, $arg_type)*> Default for Function<$($extern_type)* fn($($arg_type),*) -> R> {

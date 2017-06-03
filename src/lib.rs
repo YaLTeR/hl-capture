@@ -20,6 +20,7 @@ mod errors {
 mod macros;
 mod capture;
 mod command;
+mod cvar;
 mod dl;
 mod encode;
 mod engine;
