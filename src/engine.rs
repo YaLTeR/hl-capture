@@ -48,9 +48,7 @@ impl Engine {
 
     /// Registers the given console variable.
     pub fn register_variable(&self, cvar: &CVar) -> Result<()> {
-        ensure!(!cvar.engine_cvar.is_null(), "attempted to register a null variable");
-
-        let mut engine_cvar = unsafe { &mut *cvar.engine_cvar };
+        let mut engine_cvar = unsafe { cvar.get_engine_cvar_mut()? };
         ensure!(!engine_cvar.name.is_null(), "attempted to register a variable with null name");
         ensure!(!engine_cvar.string.is_null(), "attempted to register a variable with null string");
 

@@ -24,21 +24,29 @@ pub struct cvar_t {
     next: *mut cvar_t,
 }
 
-// Fields are public for the cvar! macro. const fn would really help here.
 pub struct CVar {
-    pub engine_cvar: *mut cvar_t,
-    pub default_value: &'static str,
-    pub name: &'static str,
+    engine_cvar: *mut cvar_t,
+    default_value: &'static str,
+    name: &'static str,
 }
 
 impl CVar {
+    /// Creates a new CVar instance.
+    pub fn new(engine_cvar: &mut cvar_t, name: &'static str, default_value: &'static str) -> Self {
+        Self {
+            engine_cvar,
+            default_value,
+            name,
+        }
+    }
+
     /// Retrieves a reference to the engine CVar.
     ///
     /// # Safety
     /// Unsafe because this function should only be called from the main game thread.
     /// You should also ensure that you don't call any engine functions while holding
     /// this reference, because the game also has a mutable reference to this CVar.
-    unsafe fn get_engine_cvar(&self) -> Result<&cvar_t> {
+    pub unsafe fn get_engine_cvar(&self) -> Result<&cvar_t> {
         ensure!(!self.engine_cvar.is_null(), "engine_cvar is null");
 
         Ok(&*self.engine_cvar)
@@ -50,7 +58,7 @@ impl CVar {
     /// Unsafe because this function should only be called from the main game thread.
     /// You should also ensure that you don't call any engine functions while holding
     /// this reference, because the game also has a mutable reference to this CVar.
-    unsafe fn get_engine_cvar_mut(&self) -> Result<&mut cvar_t> {
+    pub unsafe fn get_engine_cvar_mut(&self) -> Result<&mut cvar_t> {
         ensure!(!self.engine_cvar.is_null(), "engine_cvar is null");
 
         Ok(&mut *self.engine_cvar)

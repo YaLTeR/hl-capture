@@ -63,14 +63,14 @@ macro_rules! cvar {
     ($name:ident, $default_value:expr) => (
         thread_local! {
             #[allow(non_upper_case_globals)]
-            pub static $name: ::cvar::CVar = ::cvar::CVar {
-                engine_cvar: {
+            pub static $name: ::cvar::CVar = ::cvar::CVar::new(
+                {
                     static mut ENGINE_CVAR: ::cvar::cvar_t = ::cvar::EMPTY_CVAR_T;
                     unsafe { &mut ENGINE_CVAR }
                 },
-                default_value: $default_value,
-                name: stringify!($name),
-            };
+                stringify!($name),
+                $default_value
+            );
         }
     )
 }
