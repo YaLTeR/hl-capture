@@ -15,6 +15,7 @@ panic = "abort"
 
 [dependencies]
 error-chain = "0.10"
+fine_grained = "0.1"
 lazy_static = "0.2"
 libc = "0.2"
 gl = "0.6"

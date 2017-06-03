@@ -1,5 +1,7 @@
 use error_chain::ChainedError;
 use ffmpeg;
+use fine_grained::Stopwatch;
+use std::cell::RefCell;
 use std::ptr;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Mutex, RwLock, Once, ONCE_INIT};
@@ -18,6 +20,10 @@ lazy_static! {
 
     /// Sends events and frames to encode to the capture thread.
     static ref SEND_TO_CAPTURE_THREAD: Mutex<Option<Sender<CaptureThreadEvent>>> = Mutex::new(None);
+}
+
+thread_local! {
+    static STOPWATCH: RefCell<Option<Stopwatch>> = RefCell::new(None);
 }
 
 enum CaptureThreadEvent {
@@ -166,18 +172,44 @@ pub fn is_capturing() -> bool {
     *CAPTURING.read().unwrap()
 }
 
+pub fn capture_block_start() {
+    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().as_mut() {
+        sw.start();
+    });
+}
+
+pub fn capture_block_end() {
+    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().as_mut() {
+        sw.lap();
+        sw.stop();
+    });
+}
+
 command!(cap_start, |_engine| {
     *CAPTURING.write().unwrap() = true;
 
     SEND_TO_CAPTURE_THREAD.lock().unwrap()
         .as_ref().unwrap()
         .send(CaptureThreadEvent::CaptureStart).unwrap();
+
+    STOPWATCH.with(|sw| *sw.borrow_mut() = Some(Stopwatch::new()));
 });
 
-command!(cap_stop, |_engine| {
+command!(cap_stop, |engine| {
     *CAPTURING.write().unwrap() = false;
 
     SEND_TO_CAPTURE_THREAD.lock().unwrap()
         .as_ref().unwrap()
         .send(CaptureThreadEvent::CaptureStop).unwrap();
+
+    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().take() {
+        let frames = sw.number_of_laps();
+
+        if frames > 0 {
+            engine.con_print(&format!("Captured {} frames in {} seconds (~{} msec of overhead per frame)\n",
+                                      frames,
+                                      sw.total_time() as f64 / 1_000_000_000f64,
+                                      (sw.total_time() / frames as u64) as f64 / 1_000_000f64));
+        }
+    });
 });

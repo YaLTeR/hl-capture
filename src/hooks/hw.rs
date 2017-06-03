@@ -125,6 +125,8 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     if capture::is_capturing() {
+        capture::capture_block_start(); // Profiling.
+
         let (w, h) = get_resolution();
         let mut buf = capture::get_buffer((w, h));
 
@@ -137,6 +139,8 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                        buf.data.as_mut_ptr() as _);
 
         capture::capture(buf);
+
+        capture::capture_block_end(); // Profiling.
     }
 
     real!(Sys_VID_FlipScreen)();
