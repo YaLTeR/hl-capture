@@ -27,17 +27,21 @@ pub struct cvar_t {
 pub struct CVar {
     engine_cvar: *mut cvar_t,
     default_value: &'static str,
-    name: &'static str,
+    name_cstring: CString,
 }
 
 impl CVar {
     /// Creates a new CVar instance.
     pub fn new(engine_cvar: &mut cvar_t, name: &'static str, default_value: &'static str) -> Self {
-        Self {
+        let cvar = Self {
             engine_cvar,
             default_value,
-            name,
-        }
+            name_cstring: CString::new(name).expect("could not convert the CVar name to CString")
+        };
+
+        engine_cvar.name = cvar.name_cstring.as_ptr();
+
+        cvar
     }
 
     /// Retrieves a reference to the engine CVar.
@@ -68,14 +72,6 @@ impl CVar {
     pub fn register(&self, engine: &Engine) -> Result<()> {
         let ptr = {
             let engine_cvar = unsafe { self.get_engine_cvar_mut()? };
-
-            if engine_cvar.name.is_null() {
-                let name_cstring = CString::new(self.name)
-                    .chain_err(|| "could not convert CVar name to CString")?;
-
-                // HACK: leak name_cstring.
-                engine_cvar.name = name_cstring.into_raw();
-            }
 
             // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
             let default_value_cstring = CString::new(self.default_value)
