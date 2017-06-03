@@ -1,5 +1,6 @@
 use error_chain::ChainedError;
-use ffmpeg;
+use ffmpeg::format;
+use ffmpeg::frame::Video as VideoFrame;
 use fine_grained::Stopwatch;
 use std::cell::RefCell;
 use std::ptr;
@@ -33,22 +34,64 @@ enum CaptureThreadEvent {
 }
 
 pub struct Buffer {
-    pub data: Vec<u8>,
+    data: Vec<u8>,
     width: u32,
     height: u32,
 }
 
+impl Buffer {
+    fn new() -> Self {
+        Self {
+            data: Vec::new(),
+            width: 0,
+            height: 0,
+        }
+    }
+
+    pub fn set_resolution(&mut self, width: u32, height: u32) {
+        if self.width != width || self.height != height {
+            println!("Changing resolution from {}×{} to {}×{}.",
+                     self.width, self.height,
+                     width, height);
+
+            self.data.resize((width * height * 3) as usize, 0);
+            self.width = width;
+            self.height = height;
+        }
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        self.data.as_mut_slice()
+    }
+
+    pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
+        // Make sure frame is of correct size.
+        if self.width != frame.width() || self.height != frame.height() {
+            *frame = VideoFrame::new(format::Pixel::RGB24, self.width, self.height);
+        }
+
+        // Copy the pixel data into the frame.
+        let linesize = unsafe { ((*frame.as_ptr()).linesize[0]) as u32 };
+        let mut data = frame.data_mut(0);
+
+        for y in 0..self.height {
+            unsafe {
+                ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * 3) as isize),
+                                         data.as_mut_ptr()
+                                             .offset(((self.height - y - 1) * linesize) as
+                                                     isize),
+                                         (self.width * 3) as usize);
+            }
+        }
+    }
+}
+
 fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureThreadEvent>) {
     // Send the buffer to the game thread right away.
-    buf_sender.send(Buffer {
-                        data: Vec::new(),
-                        width: 0,
-                        height: 0,
-                    })
-              .unwrap();
+    buf_sender.send(Buffer::new()).unwrap();
 
     // This is our frame which will only be reallocated on resolution changes.
-    let mut frame = ffmpeg::frame::Video::empty();
+    let mut frame = VideoFrame::empty();
 
     // This is set to true on encoding error or cap_stop and reset on cap_start.
     // When this is true, ignore any received frames.
@@ -87,28 +130,9 @@ fn start_encoder((width, height): (u32, u32)) -> Result<encode::Encoder> {
 
 fn encode(buf: Buffer,
           buf_sender: &Sender<Buffer>,
-          frame: &mut ffmpeg::frame::Video)
+          frame: &mut VideoFrame)
           -> Result<()> {
-    // Make sure frame is of correct size.
-    if buf.width != frame.width() || buf.height != frame.height() {
-        *frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::RGB24, buf.width, buf.height);
-    }
-
-    // Copy the pixel data into the frame.
-    {
-        let linesize = unsafe { ((*frame.as_ptr()).linesize[0]) as u32 };
-        let mut data = frame.data_mut(0);
-
-        for y in 0..buf.height {
-            unsafe {
-                ptr::copy_nonoverlapping(buf.data.as_ptr().offset((y * buf.width * 3) as isize),
-                                         data.as_mut_ptr()
-                                             .offset(((buf.height - y - 1) * linesize) as
-                                                     isize),
-                                         (buf.width * 3) as usize);
-            }
-        }
-    }
+    buf.copy_to_frame(frame);
 
     // We're done with buf, now it can receive the next pack of pixels.
     buf_sender.send(buf).unwrap();
@@ -149,15 +173,7 @@ pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
         .as_ref().unwrap()
         .recv().unwrap();
 
-    if buf.width != width || buf.height != height {
-        println!("Changing resolution from {:?} to {:?}.",
-                 (buf.width, buf.height),
-                 (width, height));
-
-        buf.data.resize((width * height * 3) as usize, 0);
-        buf.width = width;
-        buf.height = height;
-    }
+    buf.set_resolution(width, height);
 
     buf
 }

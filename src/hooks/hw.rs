@@ -136,7 +136,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         // Get the pixels!
         gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
                        gl::RGB, gl::UNSIGNED_BYTE,
-                       buf.data.as_mut_ptr() as _);
+                       buf.as_mut_slice().as_mut_ptr() as _);
 
         capture::capture(buf);
 
