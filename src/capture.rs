@@ -228,7 +228,7 @@ pub fn capture_block_end() {
     });
 }
 
-command!(cap_start, |engine| {
+command!(cap_start, |mut engine| {
     let mut parameters = CaptureParameters {
         filename: String::new(),
         time_base: Rational::new(1, 1),
@@ -236,22 +236,22 @@ command!(cap_start, |engine| {
         preset: String::new(),
     };
 
-    cap_filename.with(|c| parameters.filename = engine.cvar_to_string(c).unwrap());
-    cap_fps.with(|c| match engine.cvar_parse(c) {
+    cap_filename.with(|c| parameters.filename = c.to_string(&mut engine).unwrap());
+    cap_fps.with(|c| match c.parse(&mut engine) {
         Ok(fps) => parameters.time_base = (1, fps).into(),
         Err(_) => {
             engine.con_print("Invalid cap_fps.\n");
             return;
         }
     });
-    cap_crf.with(|c| match engine.cvar_parse(c) {
+    cap_crf.with(|c| match c.parse(&mut engine) {
         Ok(crf) => parameters.crf = crf,
         Err(_) => {
             engine.con_print("Invalid cap_crf.\n");
             return;
         }
     });
-    cap_preset.with(|c| match engine.cvar_parse(c) {
+    cap_preset.with(|c| match c.parse(&mut engine) {
         Ok(preset) => parameters.preset = preset,
         Err(_) => {
             engine.con_print("Invalid cap_preset.\n");

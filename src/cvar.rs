@@ -15,24 +15,34 @@ pub const EMPTY_CVAR_T: cvar_t = cvar_t {
     next: 0 as *mut _,
 };
 
+/// The engine CVar type.
 #[repr(C)]
 pub struct cvar_t {
-    pub name: *const c_char,
-    pub string: *mut c_char,
+    name: *const c_char,
+    string: *mut c_char,
     flags: c_int,
     value: c_float,
     next: *mut cvar_t,
 }
 
+/// Safe wrapper for the engine CVar type.
 pub struct CVar {
-    engine_cvar: *mut cvar_t,
+    engine_cvar: *mut cvar_t, // This pointer is always valid and points to a 'static.
     default_value: &'static str,
     name_cstring: CString,
 }
 
+impl cvar_t {
+    pub fn string_is_non_null(&self) -> bool {
+        !self.string.is_null()
+    }
+}
+
 impl CVar {
     /// Creates a new CVar instance.
-    pub fn new(engine_cvar: &mut cvar_t, name: &'static str, default_value: &'static str) -> Self {
+    pub fn new(engine_cvar: &'static mut cvar_t,
+               name: &'static str,
+               default_value: &'static str) -> Self {
         let cvar = Self {
             engine_cvar,
             default_value,
@@ -44,34 +54,20 @@ impl CVar {
         cvar
     }
 
-    /// Retrieves a reference to the engine CVar.
-    ///
-    /// # Safety
-    /// Unsafe because this function should only be called from the main game thread.
-    /// You should also ensure that you don't call any engine functions while holding
-    /// this reference, because the game also has a mutable reference to this CVar.
-    pub unsafe fn get_engine_cvar(&self) -> Result<&cvar_t> {
-        ensure!(!self.engine_cvar.is_null(), "engine_cvar is null");
-
-        Ok(&*self.engine_cvar)
-    }
-
     /// Retrieves a mutable reference to the engine CVar.
     ///
     /// # Safety
     /// Unsafe because this function should only be called from the main game thread.
     /// You should also ensure that you don't call any engine functions while holding
     /// this reference, because the game also has a mutable reference to this CVar.
-    pub unsafe fn get_engine_cvar_mut(&self) -> Result<&mut cvar_t> {
-        ensure!(!self.engine_cvar.is_null(), "engine_cvar is null");
-
-        Ok(&mut *self.engine_cvar)
+    pub unsafe fn get_engine_cvar(&self) -> &'static mut cvar_t {
+        &mut *self.engine_cvar
     }
 
     /// Registers this console variable.
-    pub fn register(&self, engine: &Engine) -> Result<()> {
+    pub fn register(&self, engine: &mut Engine) -> Result<()> {
         let ptr = {
-            let engine_cvar = unsafe { self.get_engine_cvar_mut()? };
+            let mut engine_cvar = engine.get_engine_cvar(self);
 
             // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
             let default_value_cstring = CString::new(self.default_value)
@@ -91,24 +87,18 @@ impl CVar {
     }
 
     /// Returns the string this variable is set to.
-    ///
-    /// # Safety
-    /// Unsafe because this function should only be called from the main game thread.
-    pub unsafe fn to_string(&self) -> Result<String> {
-        let engine_cvar = self.get_engine_cvar()?;
-        ensure!(!engine_cvar.string.is_null(), "the CVar string pointer was null");
+    pub fn to_string(&self, engine: &mut Engine) -> Result<String> {
+        let engine_cvar = engine.get_engine_cvar(self);
+        ensure!(engine_cvar.string_is_non_null(), "the CVar string pointer was null");
 
-        Ok(CStr::from_ptr(engine_cvar.string).to_string_lossy().into_owned())
+        Ok(unsafe { CStr::from_ptr(engine_cvar.string) }.to_string_lossy().into_owned())
     }
 
     /// Tries parsing this variable's value to the desired type.
-    ///
-    /// # Safety
-    /// Unsafe because this function should only be called from the main game thread.
-    pub unsafe fn parse<T>(&self) -> Result<T>
+    pub fn parse<T>(&self, engine: &mut Engine) -> Result<T>
         where T: FromStr,
               <T as FromStr>::Err: ::std::error::Error + Send + 'static {
-        let string = self.to_string()
+        let string = self.to_string(engine)
             .chain_err(|| "could not get this CVar's string value")?;
         string.parse()
             .chain_err(|| "could not convert the CVar string to the desired type")

@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
-use std::str::FromStr;
+use std::ops::{Deref, DerefMut};
 
 use errors::*;
 use command;
-use cvar::CVar;
+use cvar::{cvar_t, CVar};
 use hooks::hw;
 
 /// A "container" for unsafe engine functions.
@@ -15,6 +15,13 @@ pub struct Engine {
     /// firstly, it prevents creating the struct not via the unsafe new() method,
     /// and secondly, it marks the struct as !Send and !Sync.
     _private: PhantomData<*const ()>,
+}
+
+/// A guard for statically ensuring that no engine functions are called
+/// while the engine CVar reference is valid. Holds a mutable reference.
+pub struct EngineCVarGuard<'a> {
+    engine_cvar: &'a mut cvar_t,
+    _borrow_guard: &'a mut Engine,
 }
 
 impl Engine {
@@ -47,25 +54,39 @@ impl Engine {
     }
 
     /// Registers the given console variable.
-    pub fn register_variable(&self, cvar: &CVar) -> Result<()> {
-        let mut engine_cvar = unsafe { cvar.get_engine_cvar_mut()? };
-        ensure!(!engine_cvar.name.is_null(), "attempted to register a variable with null name");
-        ensure!(!engine_cvar.string.is_null(), "attempted to register a variable with null string");
+    pub fn register_variable(&mut self, cvar: &CVar) -> Result<()> {
+        let mut engine_cvar = self.get_engine_cvar(cvar);
+
+        ensure!(engine_cvar.string_is_non_null(),
+                "attempted to register a variable with null string");
 
         unsafe { hw::register_variable(&mut engine_cvar); }
 
         Ok(())
     }
 
-    /// Returns the string this variable is set to.
-    pub fn cvar_to_string(&self, cvar: &CVar) -> Result<String> {
-        unsafe { cvar.to_string() }
+    /// Returns the engine CVar wrapped by the given CVar.
+    ///
+    /// Takes a mutable reference to Engine to statically ensure
+    /// that no engine functions are called while the engine CVar reference is valid.
+    pub fn get_engine_cvar(&mut self, cvar: &CVar) -> EngineCVarGuard {
+        EngineCVarGuard {
+            engine_cvar: unsafe { cvar.get_engine_cvar() },
+            _borrow_guard: self,
+        }
     }
+}
 
-    /// Tries parsing this variable's value to the desired type.
-    pub fn cvar_parse<T>(&self, cvar: &CVar) -> Result<T>
-        where T: FromStr,
-              <T as FromStr>::Err: ::std::error::Error + Send + 'static {
-        unsafe { cvar.parse() }
+impl<'a> Deref for EngineCVarGuard<'a> {
+    type Target = cvar_t;
+
+    fn deref(&self) -> &cvar_t {
+        self.engine_cvar
+    }
+}
+
+impl<'a> DerefMut for EngineCVarGuard<'a> {
+    fn deref_mut(&mut self) -> &mut cvar_t {
+        self.engine_cvar
     }
 }
