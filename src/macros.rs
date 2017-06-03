@@ -63,8 +63,8 @@ macro_rules! cvar {
     ($name:ident, $default_value:expr) => (
         #[allow(non_upper_case_globals)]
         pub static mut $name: ::cvar::CVar = ::cvar::CVar {
-            default_value: "60",
-            name: "cap_fps",
+            default_value: $default_value,
+            name: stringify!($name),
             .. ::cvar::EMPTY_CVAR
         };
     )

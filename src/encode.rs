@@ -8,6 +8,9 @@ lazy_static! {
     static ref VIDEO_ENCODER: Mutex<Option<ffmpeg::codec::Video>> = Mutex::new(None);
 }
 
+cvar!(cap_crf, "15");
+cvar!(cap_preset, "veryfast");
+
 /// An encoder used to encode a video to a file.
 ///
 /// Call `Encoder::start()` to start the encoding, then encode some frames with `Encoder::encode()`.
@@ -55,7 +58,12 @@ impl Encoder {
                 encoder.set_format(ffmpeg::format::Pixel::YUV420P);
             }
 
-            let encoder = encoder.open_as_with(codec, dict!("crf" => "15"))
+            // TODO: figure out a safe way of accessing cvars.
+            let crf = unsafe { cap_crf.to_string()? };
+            let preset = unsafe { cap_preset.to_string()? };
+
+            let encoder = encoder.open_as_with(codec, dict!("crf" => &crf,
+                                                            "preset" => &preset))
                 .chain_err(|| "could not open the video encoder")?;
             stream.set_parameters(&encoder);
 

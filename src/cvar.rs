@@ -1,4 +1,5 @@
 use libc::*;
+use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::str::FromStr;
 
@@ -75,9 +76,16 @@ impl CVar {
     pub fn parse<T>(&self) -> Result<T>
         where T: FromStr,
               <T as FromStr>::Err: ::std::error::Error + Send + 'static {
+        let string = self.to_string()
+            .chain_err(|| "could not get this CVar's string value")?;
+        string.parse()
+            .chain_err(|| "could not convert the CVar string to the desired type")
+    }
+
+    /// Returns the string this variable is set to.
+    pub fn to_string(&self) -> Result<Cow<str>> {
         ensure!(!self.engine_cvar.string.is_null(), "the CVar string pointer was null");
 
-        let string = unsafe { CStr::from_ptr(self.engine_cvar.string) }.to_string_lossy();
-        string.parse().chain_err(|| "could not convert the CVar string to the desired type")
+        Ok(unsafe { CStr::from_ptr(self.engine_cvar.string) }.to_string_lossy())
     }
 }

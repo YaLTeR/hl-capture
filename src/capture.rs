@@ -124,8 +124,14 @@ fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureTh
     }
 }
 
+cvar!(cap_fps, "60");
+cvar!(cap_filename, "capture.mp4");
+
 fn start_encoder((width, height): (u32, u32)) -> Result<encode::Encoder> {
-    encode::Encoder::start("/home/yalter/test.mp4", (width, height), (1, 60).into())
+    // TODO: figure out a safe way of using CVars in threads other than the game thread.
+    encode::Encoder::start(unsafe { &cap_filename.to_string()? },
+                           (width, height),
+                           (1, unsafe { cap_fps.parse()? }).into())
 }
 
 fn encode(buf: Buffer,
@@ -200,8 +206,6 @@ pub fn capture_block_end() {
         sw.stop();
     });
 }
-
-cvar!(cap_fps, "60");
 
 command!(cap_start, |_engine| {
     *CAPTURING.write().unwrap() = true;
