@@ -1,5 +1,6 @@
 use libc::*;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+use std::str::FromStr;
 
 use errors::*;
 use hooks::hw;
@@ -68,5 +69,15 @@ impl CVar {
         CString::from_raw(ptr);
 
         Ok(())
+    }
+
+    /// Tries parsing this variable's value to the desired type.
+    pub fn parse<T>(&self) -> Result<T>
+        where T: FromStr,
+              <T as FromStr>::Err: ::std::error::Error + Send + 'static {
+        ensure!(!self.engine_cvar.string.is_null(), "the CVar string pointer was null");
+
+        let string = unsafe { CStr::from_ptr(self.engine_cvar.string) }.to_string_lossy();
+        string.parse().chain_err(|| "could not convert the CVar string to the desired type")
     }
 }
