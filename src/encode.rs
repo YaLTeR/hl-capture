@@ -134,6 +134,8 @@ impl Encoder {
 
         loop {
             // Push this frame as long as it takes up the most of the video frame.
+            // TODO: move this logic somewhere to skip glReadPixels and other stuff
+            // altogether if we're gonna drop this frame anyway.
             if self.remainder <= 0.5f64 {
                 break;
             }
