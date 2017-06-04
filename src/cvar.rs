@@ -91,7 +91,9 @@ impl CVar {
         let engine_cvar = engine.get_engine_cvar(self);
         ensure!(engine_cvar.string_is_non_null(), "the CVar string pointer was null");
 
-        Ok(unsafe { CStr::from_ptr(engine_cvar.string) }.to_string_lossy().into_owned())
+        let string = unsafe { CStr::from_ptr(engine_cvar.string) }.to_str()
+            .chain_err(|| "could not convert the CVar string to a Rust string")?;
+        Ok(string.to_owned())
     }
 
     /// Tries parsing this variable's value to the desired type.

@@ -236,7 +236,13 @@ command!(cap_start, |mut engine| {
         preset: String::new(),
     };
 
-    cap_filename.with(|c| parameters.filename = c.to_string(&mut engine).unwrap());
+    cap_filename.with(|c| match c.to_string(&mut engine) {
+        Ok(filename) => parameters.filename = filename,
+        Err(_) => {
+            engine.con_print("Invalid cap_filename.\n");
+            return;
+        }
+    });
     cap_fps.with(|c| match c.parse(&mut engine) {
         Ok(fps) => parameters.time_base = (1, fps).into(),
         Err(_) => {
