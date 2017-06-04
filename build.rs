@@ -98,7 +98,7 @@ fn make_command_array(commands: Vec<String>) -> String {
 }
 
 fn make_cvar_array(cvars: Vec<String>) -> String {
-    let mut buf = format!("pub static CVARS: [&::std::thread::LocalKey<CVar>; {}] = [",
+    let mut buf = format!("pub static CVARS: [&::engine::CVarGuard; {}] = [",
                           cvars.len());
 
     let mut iter = cvars.into_iter();

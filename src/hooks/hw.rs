@@ -196,12 +196,11 @@ unsafe fn register_cvars_and_commands() {
 
     let mut engine = Engine::new();
     for cvar in cvar::CVARS.iter() {
-        cvar.with(|cvar| {
-            if let Err(ref e) = cvar.register(&mut engine)
-                                    .chain_err(|| "error registering a console variable") {
-                panic!("{}", e.display());
-            }
-        });
+        if let Err(ref e) = cvar.get(&engine)
+                                .register(&mut engine)
+                                .chain_err(|| "error registering a console variable") {
+            panic!("{}", e.display());
+        }
     }
 }
 

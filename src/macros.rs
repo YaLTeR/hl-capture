@@ -61,17 +61,17 @@ macro_rules! command {
 /// to the console command list and registered in the game.
 macro_rules! cvar {
     ($name:ident, $default_value:expr) => (
-        thread_local! {
-            #[allow(non_upper_case_globals)]
-            pub static $name: ::cvar::CVar = ::cvar::CVar::new(
-                {
+        #[allow(non_upper_case_globals)]
+        pub static $name: ::engine::CVarGuard = ::engine::CVarGuard {
+            cvar: ::cvar::CVar {
+                engine_cvar: {
                     static mut ENGINE_CVAR: ::cvar::cvar_t = ::cvar::EMPTY_CVAR_T;
-                    unsafe { &mut ENGINE_CVAR }
+                    unsafe { &ENGINE_CVAR as *const _ as *mut _ }
                 },
-                stringify!($name),
-                $default_value
-            );
-        }
+                default_value: $default_value,
+                name: stringify!($name),
+            }
+        };
     )
 }
 

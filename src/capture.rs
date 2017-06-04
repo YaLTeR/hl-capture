@@ -236,32 +236,28 @@ command!(cap_start, |mut engine| {
         preset: String::new(),
     };
 
-    match cap_filename.with(|c| c.to_string(&mut engine))
-        .chain_err(|| "invalid cap_filename") {
+    match cap_filename.get(&engine).to_string(&mut engine).chain_err(|| "invalid cap_filename") {
         Ok(filename) => parameters.filename = filename,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
         }
     };
-    match cap_fps.with(|c| c.parse(&mut engine))
-        .chain_err(|| "invalid cap_fps") {
+    match cap_fps.get(&engine).parse(&mut engine).chain_err(|| "invalid cap_fps") {
         Ok(fps) => parameters.time_base = (1, fps).into(),
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
         }
     };
-    match cap_crf.with(|c| c.parse(&mut engine))
-        .chain_err(|| "invalid cap_crf") {
+    match cap_crf.get(&engine).parse(&mut engine).chain_err(|| "invalid cap_crf") {
         Ok(crf) => parameters.crf = crf,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
         }
     };
-    match cap_preset.with(|c| c.parse(&mut engine))
-        .chain_err(|| "invalid cap_preset") {
+    match cap_preset.get(&engine).parse(&mut engine).chain_err(|| "invalid cap_preset") {
         Ok(preset) => parameters.preset = preset,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));

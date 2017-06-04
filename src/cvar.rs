@@ -27,9 +27,17 @@ pub struct cvar_t {
 
 /// Safe wrapper for the engine CVar type.
 pub struct CVar {
-    engine_cvar: *mut cvar_t, // This pointer is always valid and points to a 'static.
-    default_value: &'static str,
-    name_cstring: CString,
+    /// This field has to be public because there's no const fn.
+    /// It shouldn't be accessed manually.
+    pub engine_cvar: *mut cvar_t, // This pointer is always valid and points to a 'static.
+
+    /// This field has to be public because there's no const fn.
+    /// It shouldn't be accessed manually.
+    pub default_value: &'static str,
+
+    /// This field has to be public because there's no const fn.
+    /// It shouldn't be accessed manually.
+    pub name: &'static str,
 }
 
 impl cvar_t {
@@ -39,21 +47,6 @@ impl cvar_t {
 }
 
 impl CVar {
-    /// Creates a new CVar instance.
-    pub fn new(engine_cvar: &'static mut cvar_t,
-               name: &'static str,
-               default_value: &'static str) -> Self {
-        let cvar = Self {
-            engine_cvar,
-            default_value,
-            name_cstring: CString::new(name).expect("could not convert the CVar name to CString")
-        };
-
-        engine_cvar.name = cvar.name_cstring.as_ptr();
-
-        cvar
-    }
-
     /// Retrieves a mutable reference to the engine CVar.
     ///
     /// # Safety
@@ -68,6 +61,14 @@ impl CVar {
     pub fn register(&self, engine: &mut Engine) -> Result<()> {
         let ptr = {
             let mut engine_cvar = engine.get_engine_cvar(self);
+
+            if engine_cvar.name.is_null() {
+                let name_cstring = CString::new(self.name)
+                    .chain_err(|| "could not convert the CVar name to CString")?;
+
+                // HACK: leak this CString. It's staying around till the end anyway.
+                engine_cvar.name = name_cstring.into_raw();
+            }
 
             // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
             let default_value_cstring = CString::new(self.default_value)
