@@ -101,11 +101,7 @@ impl Encoder {
            })
     }
 
-    pub fn encode(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {
-        self.converter
-            .run(frame, &mut self.output_frame)
-            .chain_err(|| "could not convert the frame to the correct format")?;
-
+    fn push_frame(&mut self) -> Result<()> {
         self.output_frame.set_pts(Some(self.pts));
         self.pts += 1;
 
@@ -119,6 +115,16 @@ impl Encoder {
                 .write_interleaved(&mut self.context)
                 .chain_err(|| "could not write the packet")?;
         }
+
+        Ok(())
+    }
+
+    pub fn take(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {
+        self.converter
+            .run(frame, &mut self.output_frame)
+            .chain_err(|| "could not convert the frame to the correct format")?;
+
+        self.push_frame()?;
 
         Ok(())
     }

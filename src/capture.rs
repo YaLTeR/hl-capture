@@ -177,7 +177,7 @@ fn encode(buf: Buffer,
     // Encode the frame.
     encoder.as_mut()
            .unwrap()
-           .encode(&frame)
+           .take(&frame)
            .chain_err(|| "could not encode the frame")?;
 
     Ok(())
