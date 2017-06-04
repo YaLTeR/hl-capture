@@ -47,6 +47,7 @@ pub struct Pointers {
     VideoMode_IsWindowed: Function<unsafe extern "C" fn() -> c_int>,
 
     window_rect: Option<*mut RECT>,
+    host_frametime: Option<*mut c_double>,
 }
 
 // TODO: think about how to deal with unsafety here.
@@ -181,6 +182,8 @@ fn refresh_pointers() -> Result<()> {
 
         pointers.window_rect = Some(hw.sym("window_rect")
                                       .chain_err(|| "couldn't find window_rect")? as _);
+        pointers.host_frametime = Some(hw.sym("host_frametime")
+                                         .chain_err(|| "couldn't find host_frametime")? as _);
     }
 
     Ok(())
