@@ -1,11 +1,11 @@
 use error_chain::ChainedError;
-use ffmpeg::{format, Rational};
+use ffmpeg::{Rational, format};
 use ffmpeg::frame::Video as VideoFrame;
 use fine_grained::Stopwatch;
 use std::cell::RefCell;
 use std::ptr;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Mutex, RwLock, Once, ONCE_INIT};
+use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use encode;
@@ -58,8 +58,10 @@ impl Buffer {
     pub fn set_resolution(&mut self, width: u32, height: u32) {
         if self.width != width || self.height != height {
             println!("Changing resolution from {}×{} to {}×{}.",
-                     self.width, self.height,
-                     width, height);
+                     self.width,
+                     self.height,
+                     width,
+                     height);
 
             self.data.resize((width * height * 3) as usize, 0);
             self.width = width;
@@ -142,12 +144,9 @@ fn start_encoder(filename: &str,
                  (width, height): (u32, u32),
                  time_base: Rational,
                  crf: &str,
-                 preset: &str) -> Result<encode::Encoder> {
-    encode::Encoder::start(filename,
-                           (width, height),
-                           time_base,
-                           crf,
-                           preset)
+                 preset: &str)
+                 -> Result<encode::Encoder> {
+    encode::Encoder::start(filename, (width, height), time_base, crf, preset)
 }
 
 fn encode(buf: Buffer,
@@ -176,8 +175,10 @@ fn encode(buf: Buffer,
     }
 
     // Encode the frame.
-    encoder.as_mut().unwrap().encode(&frame)
-        .chain_err(|| "could not encode the frame")?;
+    encoder.as_mut()
+           .unwrap()
+           .encode(&frame)
+           .chain_err(|| "could not encode the frame")?;
 
     Ok(())
 }
@@ -196,9 +197,12 @@ pub fn initialize() {
 }
 
 pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
-    let mut buf = BUF_RECEIVER.lock().unwrap()
-        .as_ref().unwrap()
-        .recv().unwrap();
+    let mut buf = BUF_RECEIVER.lock()
+                              .unwrap()
+                              .as_ref()
+                              .unwrap()
+                              .recv()
+                              .unwrap();
 
     buf.set_resolution(width, height);
 
@@ -206,9 +210,12 @@ pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
 }
 
 pub fn capture(buf: Buffer) {
-    SEND_TO_CAPTURE_THREAD.lock().unwrap()
-        .as_ref().unwrap()
-        .send(CaptureThreadEvent::Frame(buf)).unwrap();
+    SEND_TO_CAPTURE_THREAD.lock()
+                          .unwrap()
+                          .as_ref()
+                          .unwrap()
+                          .send(CaptureThreadEvent::Frame(buf))
+                          .unwrap();
 }
 
 pub fn is_capturing() -> bool {
@@ -217,17 +224,22 @@ pub fn is_capturing() -> bool {
 
 pub fn capture_block_start() {
     STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().as_mut() {
-        sw.start();
-    });
+                       sw.start();
+                   });
 }
 
 pub fn capture_block_end() {
     STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().as_mut() {
-        sw.lap();
-        sw.stop();
-    });
+                       sw.lap();
+                       sw.stop();
+                   });
 }
 
+/// Parses the given string and returns a time base.
+///
+/// The string can be in one of the two formats:
+/// - `<i32 FPS>` - treated as an integer FPS value,
+/// - `<i32 a> <i32 b>` - treated as a fractional `a/b` FPS value.
 fn parse_fps(string: &str) -> Option<Rational> {
     if let Ok(fps) = string.parse() {
         return Some((1, fps).into());
@@ -251,27 +263,39 @@ command!(cap_start, |mut engine| {
         preset: String::new(),
     };
 
-    match cap_filename.get(&engine).to_string(&mut engine).chain_err(|| "invalid cap_filename") {
+    match cap_filename.get(&engine)
+                      .to_string(&mut engine)
+                      .chain_err(|| "invalid cap_filename") {
         Ok(filename) => parameters.filename = filename,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
         }
     };
-    if let Some(time_base) = cap_fps.get(&engine).to_string(&mut engine).ok().and_then(|s| parse_fps(&s)) {
+
+    if let Some(time_base) = cap_fps.get(&engine)
+                                    .to_string(&mut engine)
+                                    .ok()
+                                    .and_then(|s| parse_fps(&s)) {
         parameters.time_base = time_base;
     } else {
         engine.con_print("Invalid cap_fps.\n");
         return;
     }
-    match cap_crf.get(&engine).parse(&mut engine).chain_err(|| "invalid cap_crf") {
+
+    match cap_crf.get(&engine)
+                 .parse(&mut engine)
+                 .chain_err(|| "invalid cap_crf") {
         Ok(crf) => parameters.crf = crf,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
         }
     };
-    match cap_preset.get(&engine).parse(&mut engine).chain_err(|| "invalid cap_preset") {
+
+    match cap_preset.get(&engine)
+                    .parse(&mut engine)
+                    .chain_err(|| "invalid cap_preset") {
         Ok(preset) => parameters.preset = preset,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -281,9 +305,12 @@ command!(cap_start, |mut engine| {
 
     *CAPTURING.write().unwrap() = true;
 
-    SEND_TO_CAPTURE_THREAD.lock().unwrap()
-        .as_ref().unwrap()
-        .send(CaptureThreadEvent::CaptureStart(parameters)).unwrap();
+    SEND_TO_CAPTURE_THREAD.lock()
+                          .unwrap()
+                          .as_ref()
+                          .unwrap()
+                          .send(CaptureThreadEvent::CaptureStart(parameters))
+                          .unwrap();
 
     STOPWATCH.with(|sw| *sw.borrow_mut() = Some(Stopwatch::new()));
 });

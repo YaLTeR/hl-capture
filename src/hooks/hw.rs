@@ -42,9 +42,8 @@ pub struct Pointers {
     Cvar_RegisterVariable: Function<unsafe extern "C" fn(*mut cvar::cvar_t)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
     Sys_VID_FlipScreen: Function<unsafe extern "C" fn()>,
-    VideoMode_GetCurrentVideoMode: Function<unsafe extern "C" fn(*mut c_int,
-                                                                 *mut c_int,
-                                                                 *mut c_int)>,
+    VideoMode_GetCurrentVideoMode:
+        Function<unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int)>,
     VideoMode_IsWindowed: Function<unsafe extern "C" fn() -> c_int>,
 
     window_rect: Option<*mut RECT>,
@@ -137,8 +136,12 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
 
         // Get the pixels!
-        gl::ReadPixels(0, 0, w as GLsizei, h as GLsizei,
-                       gl::RGB, gl::UNSIGNED_BYTE,
+        gl::ReadPixels(0,
+                       0,
+                       w as GLsizei,
+                       h as GLsizei,
+                       gl::RGB,
+                       gl::UNSIGNED_BYTE,
                        buf.as_mut_slice().as_mut_ptr() as _);
 
         capture::capture(buf);
@@ -170,11 +173,14 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Cvar_RegisterVariable, "Cvar_RegisterVariable");
         find!(pointers, hw, Memory_Init, "Memory_Init");
         find!(pointers, hw, Sys_VID_FlipScreen, "_Z18Sys_VID_FlipScreenv");
-        find!(pointers, hw, VideoMode_GetCurrentVideoMode, "VideoMode_GetCurrentVideoMode");
+        find!(pointers,
+              hw,
+              VideoMode_GetCurrentVideoMode,
+              "VideoMode_GetCurrentVideoMode");
         find!(pointers, hw, VideoMode_IsWindowed, "VideoMode_IsWindowed");
 
         pointers.window_rect = Some(hw.sym("window_rect")
-                .chain_err(|| "couldn't find window_rect")? as _);
+                                      .chain_err(|| "couldn't find window_rect")? as _);
     }
 
     Ok(())
@@ -196,9 +202,10 @@ unsafe fn register_cvars_and_commands() {
 
     let mut engine = Engine::new();
     for cvar in cvar::CVARS.iter() {
-        if let Err(ref e) = cvar.get(&engine)
-                                .register(&mut engine)
-                                .chain_err(|| "error registering a console variable") {
+        if let Err(ref e) =
+            cvar.get(&engine)
+                .register(&mut engine)
+                .chain_err(|| "error registering a console variable") {
             panic!("{}", e.display());
         }
     }
@@ -275,20 +282,16 @@ pub unsafe fn get_resolution() -> (u32, u32) {
     (width as u32, height as u32)
 }
 
-command!(cap_test, |engine| {
-    let args = engine.args();
-
-    let mut buf = String::new();
-    buf.push_str(&format!("Args len: {}\n", args.len()));
-
-    for arg in args {
-        buf.push_str(&arg);
-        buf.push('\n');
-    }
-
-    engine.con_print(&buf);
-});
-
-command!(cap_another_test, |engine| {
-    engine.con_print("Hello! %s %d %\n");
-});
+// command!(cap_test, |engine| {
+//     let args = engine.args();
+//
+//     let mut buf = String::new();
+//     buf.push_str(&format!("Args len: {}\n", args.len()));
+//
+//     for arg in args {
+//         buf.push_str(&arg);
+//         buf.push('\n');
+//     }
+//
+//     engine.con_print(&buf);
+// });

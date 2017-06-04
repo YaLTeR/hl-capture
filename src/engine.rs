@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use errors::*;
 use command;
-use cvar::{cvar_t, CVar};
+use cvar::{CVar, cvar_t};
 use hooks::hw;
 
 /// A "container" for unsafe engine functions.
@@ -30,7 +30,7 @@ pub struct EngineCVarGuard<'a> {
 pub struct CVarGuard {
     /// This field has to be public because there's no const fn.
     /// It shouldn't be accessed manually.
-    pub cvar: CVar
+    pub cvar: CVar,
 }
 
 unsafe impl Send for CVarGuard {}
@@ -72,7 +72,9 @@ impl Engine {
         ensure!(engine_cvar.string_is_non_null(),
                 "attempted to register a variable with null string");
 
-        unsafe { hw::register_variable(&mut engine_cvar); }
+        unsafe {
+            hw::register_variable(&mut engine_cvar);
+        }
 
         Ok(())
     }

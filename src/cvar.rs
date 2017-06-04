@@ -71,15 +71,17 @@ impl CVar {
             }
 
             // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
-            let default_value_cstring = CString::new(self.default_value)
-                .chain_err(|| "could not convert default CVar value to CString")?;
+            let default_value_cstring =
+                CString::new(self.default_value)
+                    .chain_err(|| "could not convert default CVar value to CString")?;
 
             let ptr = default_value_cstring.into_raw();
             engine_cvar.string = ptr;
             ptr
         };
 
-        engine.register_variable(self).chain_err(|| "could not register the variable")?;
+        engine.register_variable(self)
+              .chain_err(|| "could not register the variable")?;
 
         // Free that CString from above.
         unsafe { CString::from_raw(ptr) };
@@ -90,9 +92,11 @@ impl CVar {
     /// Returns the string this variable is set to.
     pub fn to_string(&self, engine: &mut Engine) -> Result<String> {
         let engine_cvar = engine.get_engine_cvar(self);
-        ensure!(engine_cvar.string_is_non_null(), "the CVar string pointer was null");
+        ensure!(engine_cvar.string_is_non_null(),
+                "the CVar string pointer was null");
 
-        let string = unsafe { CStr::from_ptr(engine_cvar.string) }.to_str()
+        let string = unsafe { CStr::from_ptr(engine_cvar.string) }
+            .to_str()
             .chain_err(|| "could not convert the CVar string to a Rust string")?;
         Ok(string.to_owned())
     }
@@ -100,10 +104,11 @@ impl CVar {
     /// Tries parsing this variable's value to the desired type.
     pub fn parse<T>(&self, engine: &mut Engine) -> Result<T>
         where T: FromStr,
-              <T as FromStr>::Err: ::std::error::Error + Send + 'static {
+              <T as FromStr>::Err: ::std::error::Error + Send + 'static
+    {
         let string = self.to_string(engine)
-            .chain_err(|| "could not get this CVar's string value")?;
+                         .chain_err(|| "could not get this CVar's string value")?;
         string.parse()
-            .chain_err(|| "could not convert the CVar string to the desired type")
+              .chain_err(|| "could not convert the CVar string to the desired type")
     }
 }

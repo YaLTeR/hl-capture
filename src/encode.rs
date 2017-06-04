@@ -1,6 +1,6 @@
 use error_chain::ChainedError;
 use ffmpeg;
-use std::sync::{Mutex, Once, ONCE_INIT};
+use std::sync::{Mutex, ONCE_INIT, Once};
 
 use errors::*;
 
@@ -32,7 +32,8 @@ impl Encoder {
                  (width, height): (u32, u32),
                  time_base: ffmpeg::Rational,
                  crf: &str,
-                 preset: &str) -> Result<Self> {
+                 preset: &str)
+                 -> Result<Self> {
         let codec = VIDEO_ENCODER.lock().unwrap();
         ensure!(codec.is_some(), "video encoder was not set");
         let codec = codec.unwrap();
@@ -41,11 +42,15 @@ impl Encoder {
             .chain_err(|| "could not create the output context")?;
 
         let encoder = {
-            let mut stream = context.add_stream(codec)
-                .chain_err(|| "could not add the video stream")?;
+            let mut stream =
+                context.add_stream(codec)
+                       .chain_err(|| "could not add the video stream")?;
 
-            let mut encoder = stream.codec().encoder().video()
-                .chain_err(|| "could not retrieve the video encoder")?;
+            let mut encoder =
+                stream.codec()
+                      .encoder()
+                      .video()
+                      .chain_err(|| "could not retrieve the video encoder")?;
 
             encoder.set_width(width);
             encoder.set_height(height);
@@ -57,9 +62,10 @@ impl Encoder {
                 encoder.set_format(ffmpeg::format::Pixel::YUV420P);
             }
 
-            let encoder = encoder.open_as_with(codec, dict!("crf" => &crf,
-                                                            "preset" => &preset))
-                .chain_err(|| "could not open the video encoder")?;
+            let encoder = encoder.open_as_with(codec,
+                                               dict!("crf" => &crf,
+                                                     "preset" => &preset))
+                                 .chain_err(|| "could not open the video encoder",)?;
             stream.set_parameters(&encoder);
 
             stream.set_time_base(time_base);
@@ -68,7 +74,7 @@ impl Encoder {
         };
 
         context.write_header()
-            .chain_err(|| "could not write the header")?;
+               .chain_err(|| "could not write the header")?;
 
         let stream_time_base = context.stream(0).unwrap().time_base();
 
@@ -96,17 +102,21 @@ impl Encoder {
     }
 
     pub fn encode(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {
-        self.converter.run(frame, &mut self.output_frame)
+        self.converter
+            .run(frame, &mut self.output_frame)
             .chain_err(|| "could not convert the frame to the correct format")?;
 
         self.output_frame.set_pts(Some(self.pts));
         self.pts += 1;
 
-        if self.encoder.encode(&self.output_frame, &mut self.packet)
-            .chain_err(|| "could not encode the frame")? {
-            self.packet.rescale_ts(self.time_base, self.stream_time_base);
+        if self.encoder
+               .encode(&self.output_frame, &mut self.packet)
+               .chain_err(|| "could not encode the frame")? {
+            self.packet
+                .rescale_ts(self.time_base, self.stream_time_base);
 
-            self.packet.write_interleaved(&mut self.context)
+            self.packet
+                .write_interleaved(&mut self.context)
                 .chain_err(|| "could not write the packet")?;
         }
 
@@ -114,11 +124,14 @@ impl Encoder {
     }
 
     fn flush(&mut self) -> Result<()> {
-        while self.encoder.flush(&mut self.packet)
-            .chain_err(|| "could not get the packet")? {
-            self.packet.rescale_ts(self.time_base, self.stream_time_base);
+        while self.encoder
+                  .flush(&mut self.packet)
+                  .chain_err(|| "could not get the packet")? {
+            self.packet
+                .rescale_ts(self.time_base, self.stream_time_base);
 
-            self.packet.write_interleaved(&mut self.context)
+            self.packet
+                .write_interleaved(&mut self.context)
                 .chain_err(|| "could not write the packet")?;
         }
 
