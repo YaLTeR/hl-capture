@@ -23,6 +23,10 @@ pub struct Encoder {
     stream_time_base: ffmpeg::Rational,
 
     pts: i64,
+
+    /// Difference, in video frames, between how much time passed in-game and how much video we
+    /// output.
+    remainder: f64,
 }
 
 unsafe impl Send for Encoder {}
@@ -98,6 +102,7 @@ impl Encoder {
                stream_time_base,
 
                pts: 0,
+               remainder: 0f64,
            })
     }
 
@@ -119,12 +124,23 @@ impl Encoder {
         Ok(())
     }
 
-    pub fn take(&mut self, frame: &ffmpeg::frame::Video, _frametime: f64) -> Result<()> {
+    pub fn take(&mut self, frame: &ffmpeg::frame::Video, frametime: f64) -> Result<()> {
         self.converter
             .run(frame, &mut self.output_frame)
             .chain_err(|| "could not convert the frame to the correct format")?;
 
-        self.push_frame()?;
+        let time_base: f64 = self.time_base.into();
+        self.remainder += frametime / time_base;
+
+        loop {
+            // Push this frame as long as it takes up the most of the video frame.
+            if self.remainder <= 0.5f64 {
+                break;
+            }
+
+            self.push_frame()?;
+            self.remainder -= 1f64;
+        }
 
         Ok(())
     }
