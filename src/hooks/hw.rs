@@ -145,7 +145,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                        gl::UNSIGNED_BYTE,
                        buf.as_mut_slice().as_mut_ptr() as _);
 
-        capture::capture(buf);
+        capture::capture(buf, *POINTERS.read().unwrap().host_frametime.unwrap());
 
         capture::capture_block_end(); // Profiling.
     }

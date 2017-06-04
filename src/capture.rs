@@ -37,7 +37,7 @@ struct CaptureParameters {
 enum CaptureThreadEvent {
     CaptureStart(CaptureParameters),
     CaptureStop,
-    Frame(Buffer),
+    Frame((Buffer, f64)),
 }
 
 pub struct Buffer {
@@ -122,12 +122,13 @@ fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureTh
                 drop_frames = true;
             }
 
-            CaptureThreadEvent::Frame(buffer) => {
+            CaptureThreadEvent::Frame((buffer, frametime)) => {
                 if drop_frames {
                     continue;
                 }
 
                 if let Err(ref e) = encode(buffer,
+                                           frametime,
                                            &buf_sender,
                                            parameters.as_ref().unwrap(),
                                            &mut frame) {
@@ -150,6 +151,7 @@ fn start_encoder(filename: &str,
 }
 
 fn encode(buf: Buffer,
+          frametime: f64,
           buf_sender: &Sender<Buffer>,
           parameters: &CaptureParameters,
           frame: &mut VideoFrame)
@@ -177,7 +179,7 @@ fn encode(buf: Buffer,
     // Encode the frame.
     encoder.as_mut()
            .unwrap()
-           .take(&frame)
+           .take(&frame, frametime)
            .chain_err(|| "could not encode the frame")?;
 
     Ok(())
@@ -209,12 +211,12 @@ pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
     buf
 }
 
-pub fn capture(buf: Buffer) {
+pub fn capture(buf: Buffer, frametime: f64) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
                           .unwrap()
-                          .send(CaptureThreadEvent::Frame(buf))
+                          .send(CaptureThreadEvent::Frame((buf, frametime)))
                           .unwrap();
 }
 

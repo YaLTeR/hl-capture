@@ -119,7 +119,7 @@ impl Encoder {
         Ok(())
     }
 
-    pub fn take(&mut self, frame: &ffmpeg::frame::Video) -> Result<()> {
+    pub fn take(&mut self, frame: &ffmpeg::frame::Video, _frametime: f64) -> Result<()> {
         self.converter
             .run(frame, &mut self.output_frame)
             .chain_err(|| "could not convert the frame to the correct format")?;
