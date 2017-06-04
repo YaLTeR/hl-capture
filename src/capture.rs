@@ -228,6 +228,21 @@ pub fn capture_block_end() {
     });
 }
 
+fn parse_fps(string: &str) -> Option<Rational> {
+    if let Ok(fps) = string.parse() {
+        return Some((1, fps).into());
+    }
+
+    let mut split = string.splitn(2, ' ');
+    if let Some(den) = split.next().and_then(|s| s.parse().ok()) {
+        if let Some(num) = split.next().and_then(|s| s.parse().ok()) {
+            return Some((num, den).into());
+        }
+    }
+
+    None
+}
+
 command!(cap_start, |mut engine| {
     let mut parameters = CaptureParameters {
         filename: String::new(),
@@ -243,13 +258,12 @@ command!(cap_start, |mut engine| {
             return;
         }
     };
-    match cap_fps.get(&engine).parse(&mut engine).chain_err(|| "invalid cap_fps") {
-        Ok(fps) => parameters.time_base = (1, fps).into(),
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
+    if let Some(time_base) = cap_fps.get(&engine).to_string(&mut engine).ok().and_then(|s| parse_fps(&s)) {
+        parameters.time_base = time_base;
+    } else {
+        engine.con_print("Invalid cap_fps.\n");
+        return;
+    }
     match cap_crf.get(&engine).parse(&mut engine).chain_err(|| "invalid cap_crf") {
         Ok(crf) => parameters.crf = crf,
         Err(ref e) => {
