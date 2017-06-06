@@ -40,6 +40,7 @@ pub struct Pointers {
     Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
     Cvar_RegisterVariable: Function<unsafe extern "C" fn(*mut cvar::cvar_t)>,
+    Host_FilterTime: Function<unsafe extern "C" fn(c_float) -> c_int>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
     Sys_VID_FlipScreen: Function<unsafe extern "C" fn()>,
     VideoMode_GetCurrentVideoMode:
@@ -102,6 +103,12 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     reset_pointers();
 
     rv
+}
+
+/// Calculates the frame time and limits the FPS.
+#[no_mangle]
+pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
+    real!(Host_FilterTime)(time)
 }
 
 /// Initializes the hunk memory.
@@ -172,6 +179,7 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Cmd_Argv, "Cmd_Argv");
         find!(pointers, hw, Con_Printf, "Con_Printf");
         find!(pointers, hw, Cvar_RegisterVariable, "Cvar_RegisterVariable");
+        find!(pointers, hw, Host_FilterTime, "Host_FilterTime");
         find!(pointers, hw, Memory_Init, "Memory_Init");
         find!(pointers, hw, Sys_VID_FlipScreen, "_Z18Sys_VID_FlipScreenv");
         find!(pointers,
