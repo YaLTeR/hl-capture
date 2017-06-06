@@ -1,6 +1,6 @@
-macro_rules! cstr {
-    ($s:expr) => ($s as *const _ as *const ::libc::c_char)
-}
+// macro_rules! cstr {
+//     ($s:expr) => ($s as *const _ as *const ::libc::c_char)
+// }
 
 macro_rules! real {
     ($f:ident) => ({

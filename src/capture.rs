@@ -95,7 +95,7 @@ impl Buffer {
     }
 }
 
-fn capture_thread(buf_sender: Sender<Buffer>, event_receiver: Receiver<CaptureThreadEvent>) {
+fn capture_thread(buf_sender: &Sender<Buffer>, event_receiver: &Receiver<CaptureThreadEvent>) {
     // Send the buffer to the game thread right away.
     buf_sender.send(Buffer::new()).unwrap();
 
@@ -179,7 +179,7 @@ fn encode(buf: Buffer,
     // Encode the frame.
     encoder.as_mut()
            .unwrap()
-           .take(&frame, frametime)
+           .take(frame, frametime)
            .chain_err(|| "could not encode the frame")?;
 
     Ok(())
@@ -194,7 +194,7 @@ pub fn initialize() {
         *BUF_RECEIVER.lock().unwrap() = Some(rx);
         *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx2);
 
-        thread::spawn(move || capture_thread(tx, rx2));
+        thread::spawn(move || capture_thread(&tx, &rx2));
     });
 }
 

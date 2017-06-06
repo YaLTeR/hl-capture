@@ -15,7 +15,7 @@ pub const EMPTY_CVAR_T: cvar_t = cvar_t {
     next: 0 as *mut _,
 };
 
-/// The engine CVar type.
+/// The engine `CVar` type.
 #[repr(C)]
 pub struct cvar_t {
     name: *const c_char,
@@ -25,7 +25,7 @@ pub struct cvar_t {
     next: *mut cvar_t,
 }
 
-/// Safe wrapper for the engine CVar type.
+/// Safe wrapper for the engine `CVar` type.
 pub struct CVar {
     /// This field has to be public because there's no const fn.
     /// It shouldn't be accessed manually.

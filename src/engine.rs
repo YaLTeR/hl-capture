@@ -18,13 +18,13 @@ pub struct Engine {
 }
 
 /// A guard for statically ensuring that no engine functions are called
-/// while the engine CVar reference is valid. Holds a mutable reference.
+/// while the engine `CVar` reference is valid. Holds a mutable reference.
 pub struct EngineCVarGuard<'a> {
     engine_cvar: &'a mut cvar_t,
     _borrow_guard: &'a mut Engine,
 }
 
-/// A Send+Sync CVar wrapper.
+/// A Send+Sync `CVar` wrapper.
 ///
 /// This wrapper can only be used from the main game thread.
 pub struct CVarGuard {

@@ -67,8 +67,8 @@ impl Encoder {
             }
 
             let encoder = encoder.open_as_with(codec,
-                                               dict!("crf" => &crf,
-                                                     "preset" => &preset))
+                                               dict!("crf" => crf,
+                                                     "preset" => preset))
                                  .chain_err(|| "could not open the video encoder",)?;
             stream.set_parameters(&encoder);
 

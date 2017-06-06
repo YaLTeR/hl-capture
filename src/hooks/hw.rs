@@ -199,12 +199,12 @@ fn reset_pointers() {
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
 unsafe fn register_cvars_and_commands() {
-    for cmd in command::COMMANDS.iter() {
+    for cmd in &command::COMMANDS {
         register_command(cmd.name(), cmd.callback());
     }
 
     let mut engine = Engine::new();
-    for cvar in cvar::CVARS.iter() {
+    for cvar in &cvar::CVARS {
         if let Err(ref e) =
             cvar.get(&engine)
                 .register(&mut engine)
