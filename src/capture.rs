@@ -8,13 +8,13 @@ use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
-use encode;
+use encode::{Encoder, EncoderParameters};
 use errors::*;
 
 lazy_static! {
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
 
-    static ref ENCODER: Mutex<Option<encode::Encoder>> = Mutex::new(None);
+    static ref ENCODER: Mutex<Option<Encoder>> = Mutex::new(None);
 
     /// Receives buffers to write pixels to.
     static ref BUF_RECEIVER: Mutex<Option<Receiver<Buffer>>> = Mutex::new(None);
@@ -27,15 +27,8 @@ thread_local! {
     static STOPWATCH: RefCell<Option<Stopwatch>> = RefCell::new(None);
 }
 
-struct CaptureParameters {
-    filename: String,
-    time_base: Rational,
-    crf: String,
-    preset: String,
-}
-
 enum CaptureThreadEvent {
-    CaptureStart(CaptureParameters),
+    CaptureStart(EncoderParameters),
     CaptureStop,
     Frame((Buffer, f64)),
 }
@@ -141,19 +134,16 @@ fn capture_thread(buf_sender: &Sender<Buffer>, event_receiver: &Receiver<Capture
     }
 }
 
-fn start_encoder(filename: &str,
-                 (width, height): (u32, u32),
-                 time_base: Rational,
-                 crf: &str,
-                 preset: &str)
-                 -> Result<encode::Encoder> {
-    encode::Encoder::start(filename, (width, height), time_base, crf, preset)
+fn start_encoder(parameters: &EncoderParameters,
+                 (width, height): (u32, u32))
+                 -> Result<Encoder> {
+    Encoder::start(&parameters, (width, height))
 }
 
 fn encode(buf: Buffer,
           frametime: f64,
           buf_sender: &Sender<Buffer>,
-          parameters: &CaptureParameters,
+          parameters: &EncoderParameters,
           frame: &mut VideoFrame)
           -> Result<()> {
     buf.copy_to_frame(frame);
@@ -168,11 +158,8 @@ fn encode(buf: Buffer,
     if encoder.as_ref()
               .map_or(true,
                       |enc| enc.width() != frame.width() || enc.height() != frame.height()) {
-        *encoder = Some(start_encoder(&parameters.filename,
-                                      (frame.width(), frame.height()),
-                                      parameters.time_base,
-                                      &parameters.crf,
-                                      &parameters.preset)
+        *encoder = Some(start_encoder(&parameters,
+                                      (frame.width(), frame.height()))
                             .chain_err(|| "could not start the video encoder")?);
     }
 
@@ -258,11 +245,12 @@ fn parse_fps(string: &str) -> Option<Rational> {
 }
 
 command!(cap_start, |mut engine| {
-    let mut parameters = CaptureParameters {
-        filename: String::new(),
-        time_base: Rational::new(1, 1),
+    let mut parameters = EncoderParameters {
+        bitrate: 0,
         crf: String::new(),
+        filename: String::new(),
         preset: String::new(),
+        time_base: Rational::new(1, 1),
     };
 
     match cap_filename.get(&engine)
@@ -289,6 +277,16 @@ command!(cap_start, |mut engine| {
                  .parse(&mut engine)
                  .chain_err(|| "invalid cap_crf") {
         Ok(crf) => parameters.crf = crf,
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
+
+    match cap_bitrate.get(&engine)
+                     .parse(&mut engine)
+                     .chain_err(|| "invalid cap_bitrate") {
+        Ok(bitrate) => parameters.bitrate = bitrate,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
@@ -336,6 +334,7 @@ command!(cap_stop, |engine| {
     });
 });
 
+cvar!(cap_bitrate, "0");
 cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");

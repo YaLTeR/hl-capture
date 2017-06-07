@@ -31,18 +31,24 @@ pub struct Encoder {
 
 unsafe impl Send for Encoder {}
 
+/// Parameters for encoding and muxing.
+pub struct EncoderParameters {
+    pub bitrate: usize,
+    pub crf: String,
+    pub filename: String,
+    pub preset: String,
+    pub time_base: ffmpeg::Rational,
+}
+
 impl Encoder {
-    pub fn start(filename: &str,
-                 (width, height): (u32, u32),
-                 time_base: ffmpeg::Rational,
-                 crf: &str,
-                 preset: &str)
+    pub fn start(parameters: &EncoderParameters,
+                 (width, height): (u32, u32))
                  -> Result<Self> {
         let codec = VIDEO_ENCODER.lock().unwrap();
         ensure!(codec.is_some(), "video encoder was not set");
         let codec = codec.unwrap();
 
-        let mut context = ffmpeg::format::output(&filename)
+        let mut context = ffmpeg::format::output(&parameters.filename)
             .chain_err(|| "could not create the output context")?;
 
         let encoder = {
@@ -58,7 +64,8 @@ impl Encoder {
 
             encoder.set_width(width);
             encoder.set_height(height);
-            encoder.set_time_base(time_base);
+            encoder.set_time_base(parameters.time_base);
+            encoder.set_bit_rate(parameters.bitrate);
 
             if let Some(mut formats) = codec.formats() {
                 encoder.set_format(formats.next().unwrap());
@@ -67,12 +74,12 @@ impl Encoder {
             }
 
             let encoder = encoder.open_as_with(codec,
-                                               dict!("crf" => crf,
-                                                     "preset" => preset))
+                                               dict!("crf" => &parameters.crf,
+                                                     "preset" => &parameters.preset))
                                  .chain_err(|| "could not open the video encoder",)?;
             stream.set_parameters(&encoder);
 
-            stream.set_time_base(time_base);
+            stream.set_time_base(parameters.time_base);
 
             encoder
         };
@@ -98,7 +105,7 @@ impl Encoder {
                output_frame,
                packet,
 
-               time_base,
+               time_base: parameters.time_base,
                stream_time_base,
 
                pts: 0,
