@@ -38,6 +38,8 @@ pub struct EncoderParameters {
     pub filename: String,
     pub preset: String,
     pub time_base: ffmpeg::Rational,
+    pub vpx_cpu_usage: String,
+    pub vpx_threads: String,
 }
 
 impl Encoder {
@@ -75,7 +77,9 @@ impl Encoder {
 
             let encoder = encoder.open_as_with(codec,
                                                dict!("crf" => &parameters.crf,
-                                                     "preset" => &parameters.preset))
+                                                     "preset" => &parameters.preset,
+                                                     "cpu-usage" => &parameters.vpx_cpu_usage,
+                                                     "threads" => &parameters.vpx_threads))
                                  .chain_err(|| "could not open the video encoder",)?;
             stream.set_parameters(&encoder);
 

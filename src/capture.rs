@@ -251,6 +251,8 @@ command!(cap_start, |mut engine| {
         filename: String::new(),
         preset: String::new(),
         time_base: Rational::new(1, 1),
+        vpx_cpu_usage: String::new(),
+        vpx_threads: String::new(),
     };
 
     match cap_filename.get(&engine)
@@ -303,6 +305,26 @@ command!(cap_start, |mut engine| {
         }
     };
 
+    match cap_vpx_cpu_usage.get(&engine)
+                         .parse(&mut engine)
+                         .chain_err(|| "invalid cap_vpx_cpu_usage") {
+        Ok(cpu_usage) => parameters.vpx_cpu_usage = cpu_usage,
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
+
+    match cap_vpx_threads.get(&engine)
+                         .parse(&mut engine)
+                         .chain_err(|| "invalid cap_vpx_threads") {
+        Ok(threads) => parameters.vpx_threads = threads,
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
+
     *CAPTURING.write().unwrap() = true;
 
     SEND_TO_CAPTURE_THREAD.lock()
@@ -338,4 +360,6 @@ cvar!(cap_bitrate, "0");
 cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");
+cvar!(cap_vpx_cpu_usage, "5");
+cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");
