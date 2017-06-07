@@ -117,6 +117,7 @@ fn capture_thread(buf_sender: &Sender<Buffer>, event_receiver: &Receiver<Capture
 
             CaptureThreadEvent::Frame((buffer, frametime)) => {
                 if drop_frames {
+                    buf_sender.send(buffer).unwrap();
                     continue;
                 }
 
