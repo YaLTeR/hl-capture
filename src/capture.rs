@@ -293,9 +293,9 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_preset.get(&engine)
-                    .parse(&mut engine)
-                    .chain_err(|| "invalid cap_preset") {
+    match cap_x264_preset.get(&engine)
+                         .parse(&mut engine)
+                         .chain_err(|| "invalid cap_x264_preset") {
         Ok(preset) => parameters.preset = preset,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -338,4 +338,4 @@ cvar!(cap_bitrate, "0");
 cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");
-cvar!(cap_preset, "veryfast");
+cvar!(cap_x264_preset, "veryfast");
