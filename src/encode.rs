@@ -105,7 +105,19 @@ impl Encoder {
             encoder
         };
 
-        context.write_header()
+        let muxer_settings = parameters.muxer_settings
+            .split_whitespace()
+            .filter_map(|s| {
+                let mut split = s.splitn(2, '=');
+
+                if let (Some(key), Some(value)) = (split.next(), split.next()) {
+                    return Some((key, value));
+                }
+
+                None
+            }).collect();
+
+        context.write_header_with(muxer_settings)
                .chain_err(|| "could not write the header")?;
 
         let stream_time_base = context.stream(0).unwrap().time_base();
