@@ -134,6 +134,14 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// Flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
+    // Print all errors that happened.
+    loop {
+        match capture::get_error() {
+            Some(e) => con_print(&format!("{}", e.display())),
+            None => break,
+        }
+    }
+
     if capture::is_capturing() {
         capture::capture_block_start(); // Profiling.
 

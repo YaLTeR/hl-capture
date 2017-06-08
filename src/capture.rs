@@ -5,7 +5,7 @@ use fine_grained::Stopwatch;
 use std::cell::RefCell;
 use std::ptr;
 use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 use encode::{Encoder, EncoderParameters};
@@ -18,6 +18,9 @@ lazy_static! {
 
     /// Receives buffers to write pixels to.
     static ref BUF_RECEIVER: Mutex<Option<Receiver<Buffer>>> = Mutex::new(None);
+
+    /// Receives errors.
+    static ref ERROR_RECEIVER: Mutex<Option<Receiver<Error>>> = Mutex::new(None);
 
     /// Sends events and frames to encode to the capture thread.
     static ref SEND_TO_CAPTURE_THREAD: Mutex<Option<Sender<CaptureThreadEvent>>> = Mutex::new(None);
@@ -88,7 +91,7 @@ impl Buffer {
     }
 }
 
-fn capture_thread(buf_sender: &Sender<Buffer>, event_receiver: &Receiver<CaptureThreadEvent>) {
+fn capture_thread(buf_sender: &Sender<Buffer>, error_sender: &Sender<Error>, event_receiver: &Receiver<CaptureThreadEvent>) {
     // Send the buffer to the game thread right away.
     buf_sender.send(Buffer::new()).unwrap();
 
@@ -111,7 +114,14 @@ fn capture_thread(buf_sender: &Sender<Buffer>, event_receiver: &Receiver<Capture
             }
 
             CaptureThreadEvent::CaptureStop => {
-                *ENCODER.lock().unwrap() = None;
+                if let Some(mut encoder) = (*ENCODER.lock().unwrap()).take() {
+                    if let Err(e) = encoder.finish() {
+                        error_sender.send(e).unwrap();
+                    }
+
+                    // The encoder is dropped here.
+                }
+
                 drop_frames = true;
             }
 
@@ -121,14 +131,15 @@ fn capture_thread(buf_sender: &Sender<Buffer>, event_receiver: &Receiver<Capture
                     continue;
                 }
 
-                if let Err(ref e) = encode(buffer,
-                                           frametime,
-                                           &buf_sender,
-                                           parameters.as_ref().unwrap(),
-                                           &mut frame) {
+                if let Err(e) = encode(buffer,
+                                       frametime,
+                                       &buf_sender,
+                                       parameters.as_ref().unwrap(),
+                                       &mut frame) {
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
-                    println!("Encoding error: {}", e.display());
+
+                    error_sender.send(e).unwrap();
                 }
             }
         }
@@ -150,6 +161,10 @@ fn encode(buf: Buffer,
     buf.copy_to_frame(frame);
 
     // We're done with buf, now it can receive the next pack of pixels.
+    // IMPORTANT: if there is any error handling in this function before this line, make sure to
+    // handle sending the buffer back in the error handling appropriately, as otherwise the game
+    // will freeze.
+    // TODO: restructure the code to get rid of the above condition.
     buf_sender.send(buf).unwrap();
 
     // Let's encode the frame we just received.
@@ -177,12 +192,14 @@ pub fn initialize() {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
         let (tx, rx) = channel::<Buffer>();
-        let (tx2, rx2) = channel::<CaptureThreadEvent>();
+        let (tx2, rx2) = channel::<Error>();
+        let (tx3, rx3) = channel::<CaptureThreadEvent>();
 
         *BUF_RECEIVER.lock().unwrap() = Some(rx);
-        *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx2);
+        *ERROR_RECEIVER.lock().unwrap() = Some(rx2);
+        *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx3);
 
-        thread::spawn(move || capture_thread(&tx, &rx2));
+        thread::spawn(move || capture_thread(&tx, &tx2, &rx3));
     });
 }
 
@@ -197,6 +214,14 @@ pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
     buf.set_resolution(width, height);
 
     buf
+}
+
+pub fn get_error() -> Option<Error> {
+    match ERROR_RECEIVER.lock().unwrap().as_ref().unwrap().try_recv() {
+        Ok(e) => Some(e),
+        Err(TryRecvError::Empty) => None,
+        Err(TryRecvError::Disconnected) => unreachable!(),
+    }
 }
 
 pub fn capture(buf: Buffer, frametime: f64) {

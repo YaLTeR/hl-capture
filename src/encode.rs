@@ -18,6 +18,7 @@ pub struct Encoder {
     encoder: ffmpeg::codec::encoder::Video,
     output_frame: ffmpeg::util::frame::Video,
     packet: ffmpeg::Packet,
+    finished: bool,
 
     time_base: ffmpeg::Rational,
     stream_time_base: ffmpeg::Rational,
@@ -108,6 +109,7 @@ impl Encoder {
                encoder,
                output_frame,
                packet,
+               finished: false,
 
                time_base: parameters.time_base,
                stream_time_base,
@@ -173,6 +175,17 @@ impl Encoder {
         Ok(())
     }
 
+    pub fn finish(&mut self) -> Result<()> {
+        // This should be at the beginning because we want to be able to drop the Encoder even if
+        // stuff here fails.
+        self.finished = true;
+
+        self.flush().chain_err(|| "unable to flush the encoder")?;
+        self.context.write_trailer().chain_err(|| "could not write the trailer")?;
+
+        Ok(())
+    }
+
     pub fn width(&self) -> u32 {
         self.encoder.width()
     }
@@ -184,9 +197,9 @@ impl Encoder {
 
 impl Drop for Encoder {
     fn drop(&mut self) {
-        #![allow(unused_must_use)]
-        self.flush();
-        self.context.write_trailer();
+        if !self.finished {
+            panic!("dropped an Encoder that was not properly closed (see Encoder::finish())");
+        }
     }
 }
 
