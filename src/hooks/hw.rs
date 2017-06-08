@@ -116,7 +116,21 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
 /// Calculates the frame time and limits the FPS.
 #[no_mangle]
 pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
-    real!(Host_FilterTime)(time)
+    let old_realtime = *POINTERS.read().unwrap().realtime.unwrap();
+
+    let rv = real!(Host_FilterTime)(time);
+
+    // TODO: this will NOT set the frametime on the first frame of capture / demo playback and WILL
+    // set the frametime on the first frame of not capturing. This needs to be fixed somehow.
+    if capture::is_capturing() && (*POINTERS.read().unwrap().cls.unwrap()).demoplayback != 0 {
+        if let Some(frametime) = capture::get_frametime() {
+            *POINTERS.read().unwrap().host_frametime.unwrap() = frametime;
+            *POINTERS.read().unwrap().realtime.unwrap() = old_realtime + frametime;
+            return 1;
+        }
+    }
+
+    rv
 }
 
 /// Initializes the hunk memory.

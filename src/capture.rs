@@ -14,6 +14,9 @@ use errors::*;
 lazy_static! {
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
 
+    // TODO: this is bad, refactor this.
+    static ref TIME_BASE: RwLock<Option<Rational>> = RwLock::new(None);
+
     static ref ENCODER: Mutex<Option<Encoder>> = Mutex::new(None);
 
     /// Receives buffers to write pixels to.
@@ -250,6 +253,10 @@ pub fn capture_block_end() {
                    });
 }
 
+pub fn get_frametime() -> Option<f64> {
+    TIME_BASE.read().unwrap().map(|x| x.into())
+}
+
 /// Parses the given string and returns a time base.
 ///
 /// The string can be in one of the two formats:
@@ -374,6 +381,7 @@ command!(cap_start, |mut engine| {
     };
 
     *CAPTURING.write().unwrap() = true;
+    *TIME_BASE.write().unwrap() = Some(parameters.time_base);
 
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
