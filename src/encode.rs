@@ -81,6 +81,15 @@ impl Encoder {
                 encoder.set_format(ffmpeg::format::Pixel::YUV420P);
             }
 
+            if encoder.format() == ffmpeg::format::Pixel::YUV420P {
+                // Write the color space and range into the output file so everything knows how to
+                // display it.
+                unsafe {
+                    (*encoder.as_mut_ptr()).colorspace = ffmpeg::color::Space::BT470BG.into();
+                    (*encoder.as_mut_ptr()).color_range = ffmpeg::color::Range::MPEG.into();
+                }
+            }
+
             let encoder_settings =
                 parameters.video_encoder_settings
                           .split_whitespace()
