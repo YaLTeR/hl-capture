@@ -275,8 +275,10 @@ command!(cap_start, |mut engine| {
         bitrate: 0,
         crf: String::new(),
         filename: String::new(),
+        muxer_settings: String::new(),
         preset: String::new(),
         time_base: Rational::new(1, 1),
+        video_encoder_settings: String::new(),
         vpx_cpu_usage: String::new(),
         vpx_threads: String::new(),
     };
@@ -321,10 +323,30 @@ command!(cap_start, |mut engine| {
         }
     };
 
+    match cap_muxer_settings.get(&engine)
+                            .parse(&mut engine)
+                            .chain_err(|| "invalid cap_muxer_settings") {
+        Ok(muxer_settings) => parameters.muxer_settings = muxer_settings,
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
+
     match cap_x264_preset.get(&engine)
                          .parse(&mut engine)
                          .chain_err(|| "invalid cap_x264_preset") {
         Ok(preset) => parameters.preset = preset,
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
+
+    match cap_video_encoder_settings.get(&engine)
+                                    .parse(&mut engine)
+                                    .chain_err(|| "invalid cap_video_encoder_settings") {
+        Ok(video_encoder_settings) => parameters.video_encoder_settings = video_encoder_settings,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
@@ -386,6 +408,8 @@ cvar!(cap_bitrate, "0");
 cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");
+cvar!(cap_muxer_settings, "");
+cvar!(cap_video_encoder_settings, "");
 cvar!(cap_vpx_cpu_usage, "5");
 cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");

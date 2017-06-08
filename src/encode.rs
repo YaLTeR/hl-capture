@@ -37,16 +37,16 @@ pub struct EncoderParameters {
     pub bitrate: usize,
     pub crf: String,
     pub filename: String,
+    pub muxer_settings: String,
     pub preset: String,
     pub time_base: ffmpeg::Rational,
+    pub video_encoder_settings: String,
     pub vpx_cpu_usage: String,
     pub vpx_threads: String,
 }
 
 impl Encoder {
-    pub fn start(parameters: &EncoderParameters,
-                 (width, height): (u32, u32))
-                 -> Result<Self> {
+    pub fn start(parameters: &EncoderParameters, (width, height): (u32, u32)) -> Result<Self> {
         let codec = VIDEO_ENCODER.lock().unwrap();
         ensure!(codec.is_some(), "video encoder was not set");
         let codec = codec.unwrap();
@@ -76,11 +76,27 @@ impl Encoder {
                 encoder.set_format(ffmpeg::format::Pixel::YUV420P);
             }
 
-            let encoder = encoder.open_as_with(codec,
-                                               dict!("crf" => &parameters.crf,
-                                                     "preset" => &parameters.preset,
-                                                     "cpu-usage" => &parameters.vpx_cpu_usage,
-                                                     "threads" => &parameters.vpx_threads))
+            let encoder_settings =
+                parameters.video_encoder_settings
+                          .split_whitespace()
+                          .filter_map(|s| {
+                              let mut split = s.splitn(2, '=');
+
+                              if let (Some(key), Some(value)) = (split.next(), split.next()) {
+                                  return Some((key, value));
+                              }
+
+                              None
+                          })
+                          .chain([("crf", parameters.crf.as_str()),
+                                  ("preset", parameters.preset.as_str()),
+                                  ("cpu-usage", parameters.vpx_cpu_usage.as_str()),
+                                  ("threads", parameters.vpx_threads.as_str())]
+                                     .iter()
+                                     .map(|x| *x)) // By-value iterators?
+                          .collect();
+
+            let encoder = encoder.open_as_with(codec, encoder_settings)
                                  .chain_err(|| "could not open the video encoder",)?;
             stream.set_parameters(&encoder);
 
@@ -181,7 +197,9 @@ impl Encoder {
         self.finished = true;
 
         self.flush().chain_err(|| "unable to flush the encoder")?;
-        self.context.write_trailer().chain_err(|| "could not write the trailer")?;
+        self.context
+            .write_trailer()
+            .chain_err(|| "could not write the trailer")?;
 
         Ok(())
     }
