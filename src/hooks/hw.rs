@@ -117,7 +117,15 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
 /// Stops the demo playback.
 #[no_mangle]
 pub unsafe extern "C" fn CL_StopPlayback() {
-    real!(CL_StopPlayback);
+    if capture::is_capturing() && (*POINTERS.read().unwrap().cls.unwrap()).demoplayback != 0 {
+        let mut engine = Engine::new();
+
+        if cap_playdemostop.get(&engine).parse(&mut engine).unwrap_or(0) != 0 {
+            capture::stop(&engine);
+        }
+    }
+
+    real!(CL_StopPlayback)();
 }
 
 /// Calculates the frame time and limits the FPS.
@@ -335,16 +343,4 @@ pub unsafe fn get_resolution() -> (u32, u32) {
     (width as u32, height as u32)
 }
 
-// command!(cap_test, |engine| {
-//     let args = engine.args();
-//
-//     let mut buf = String::new();
-//     buf.push_str(&format!("Args len: {}\n", args.len()));
-//
-//     for arg in args {
-//         buf.push_str(&arg);
-//         buf.push('\n');
-//     }
-//
-//     engine.con_print(&buf);
-// });
+cvar!(cap_playdemostop, "1");

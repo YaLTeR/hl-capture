@@ -9,6 +9,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 use encode::{Encoder, EncoderParameters};
+use engine::Engine;
 use errors::*;
 
 lazy_static! {
@@ -257,6 +258,25 @@ pub fn get_frametime() -> Option<f64> {
     TIME_BASE.read().unwrap().map(|x| x.into())
 }
 
+pub fn stop(engine: &Engine) {
+    *CAPTURING.write().unwrap() = false;
+
+    SEND_TO_CAPTURE_THREAD.lock().unwrap()
+        .as_ref().unwrap()
+        .send(CaptureThreadEvent::CaptureStop).unwrap();
+
+    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().take() {
+        let frames = sw.number_of_laps();
+
+        if frames > 0 {
+            engine.con_print(&format!("Captured {} frames in {} seconds (~{} msec of overhead per frame)\n",
+                                      frames,
+                                      sw.total_time() as f64 / 1_000_000_000f64,
+                                      (sw.total_time() / frames as u64) as f64 / 1_000_000f64));
+        }
+    });
+}
+
 /// Parses the given string and returns a time base.
 ///
 /// The string can be in one of the two formats:
@@ -394,22 +414,7 @@ command!(cap_start, |mut engine| {
 });
 
 command!(cap_stop, |engine| {
-    *CAPTURING.write().unwrap() = false;
-
-    SEND_TO_CAPTURE_THREAD.lock().unwrap()
-        .as_ref().unwrap()
-        .send(CaptureThreadEvent::CaptureStop).unwrap();
-
-    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().take() {
-        let frames = sw.number_of_laps();
-
-        if frames > 0 {
-            engine.con_print(&format!("Captured {} frames in {} seconds (~{} msec of overhead per frame)\n",
-                                      frames,
-                                      sw.total_time() as f64 / 1_000_000_000f64,
-                                      (sw.total_time() / frames as u64) as f64 / 1_000_000f64));
-        }
-    });
+    stop(&engine);
 });
 
 cvar!(cap_bitrate, "0");
