@@ -47,8 +47,9 @@ pub struct Pointers {
         Function<unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int)>,
     VideoMode_IsWindowed: Function<unsafe extern "C" fn() -> c_int>,
 
-    window_rect: Option<*mut RECT>,
+    cls: Option<*mut client_static_t>,
     host_frametime: Option<*mut c_double>,
+    window_rect: Option<*mut RECT>,
 }
 
 // TODO: think about how to deal with unsafety here.
@@ -65,6 +66,12 @@ struct RECT {
     right: c_int,
     top: c_int,
     bottom: c_int,
+}
+
+#[repr(C)]
+struct client_static_t {
+    stuff: [u8; 0x4060],
+    demoplayback: c_int,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -196,10 +203,12 @@ fn refresh_pointers() -> Result<()> {
               "VideoMode_GetCurrentVideoMode");
         find!(pointers, hw, VideoMode_IsWindowed, "VideoMode_IsWindowed");
 
-        pointers.window_rect = Some(hw.sym("window_rect")
-                                      .chain_err(|| "couldn't find window_rect")? as _);
+        pointers.cls = Some(hw.sym("cls")
+                              .chain_err(|| "couldn't find cls")? as _);
         pointers.host_frametime = Some(hw.sym("host_frametime")
                                          .chain_err(|| "couldn't find host_frametime")? as _);
+        pointers.window_rect = Some(hw.sym("window_rect")
+                                      .chain_err(|| "couldn't find window_rect")? as _);
     }
 
     Ok(())
