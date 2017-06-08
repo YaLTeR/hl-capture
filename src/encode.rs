@@ -53,6 +53,7 @@ impl Encoder {
 
         let mut context = ffmpeg::format::output(&parameters.filename)
             .chain_err(|| "could not create the output context")?;
+        let global = context.format().flags().contains(ffmpeg::format::flag::GLOBAL_HEADER);
 
         let encoder = {
             let mut stream =
@@ -64,6 +65,10 @@ impl Encoder {
                       .encoder()
                       .video()
                       .chain_err(|| "could not retrieve the video encoder")?;
+
+            if global {
+                encoder.set_flags(ffmpeg::codec::flag::GLOBAL_HEADER);
+            }
 
             encoder.set_width(width);
             encoder.set_height(height);
