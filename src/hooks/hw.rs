@@ -49,6 +49,7 @@ pub struct Pointers {
 
     cls: Option<*mut client_static_t>,
     host_frametime: Option<*mut c_double>,
+    realtime: Option<*mut c_double>,
     window_rect: Option<*mut RECT>,
 }
 
@@ -207,6 +208,8 @@ fn refresh_pointers() -> Result<()> {
                               .chain_err(|| "couldn't find cls")? as _);
         pointers.host_frametime = Some(hw.sym("host_frametime")
                                          .chain_err(|| "couldn't find host_frametime")? as _);
+        pointers.realtime = Some(hw.sym("realtime")
+                                   .chain_err(|| "couldn't find realtime")? as _);
         pointers.window_rect = Some(hw.sym("window_rect")
                                       .chain_err(|| "couldn't find window_rect")? as _);
     }
