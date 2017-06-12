@@ -115,6 +115,9 @@ impl Encoder {
             stream.set_parameters(&encoder);
 
             stream.set_time_base(parameters.time_base);
+            unsafe {
+                (*stream.as_mut_ptr()).avg_frame_rate = parameters.time_base.invert().into()
+            };
 
             encoder
         };
