@@ -180,14 +180,17 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     }
 
     if capture::is_capturing() {
-        capture::capture_block_start(); // Profiling.
-
+        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("get_resolution()"));
         let (w, h) = get_resolution();
+
+        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("get_buffer()"));
         let mut buf = capture::get_buffer((w, h));
 
+        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::PixelStorei()"));
         // Our buffer expects 1-byte alignment.
         gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
 
+        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::ReadPixels()"));
         // Get the pixels!
         gl::ReadPixels(0,
                        0,
@@ -197,9 +200,10 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                        gl::UNSIGNED_BYTE,
                        buf.as_mut_slice().as_mut_ptr() as _);
 
+        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("capture()"));
         capture::capture(buf, *POINTERS.read().unwrap().host_frametime.unwrap());
 
-        capture::capture_block_end(); // Profiling.
+        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop().unwrap());
     }
 
     real!(Sys_VID_FlipScreen)();

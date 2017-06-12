@@ -6,14 +6,21 @@ use errors::*;
 /// A profiler that gathers average run times code sections.
 pub struct Profiler {
     main_watch: Stopwatch,
-    watches: HashMap<&'static str, Stopwatch>,
+    watches: HashMap<&'static str, (usize, Stopwatch)>,
     current_section: Option<&'static str>,
 }
 
 /// Profiling data collected by the `Profiler`.
 pub struct ProfilingData {
-    average_total_time: f64,
-    average_section_times: HashMap<&'static str, f64>,
+    /// Number of laps.
+    pub lap_count: usize,
+
+    /// Average lap time in milliseconds.
+    pub average_lap_time: f64,
+
+    /// Average time of each section in milliseconds.
+    /// The vector is sorted according to the section order.
+    pub average_section_times: Vec<(&'static str, f64)>,
 }
 
 impl Profiler {
@@ -36,10 +43,12 @@ impl Profiler {
             self.main_watch.start();
         }
 
-        self.watches
-            .entry(name)
-            .or_insert_with(Stopwatch::new)
-            .start();
+        let len = self.watches.len();
+        let &mut (_, ref mut stopwatch) =
+            self.watches
+                .entry(name)
+                .or_insert((len, Stopwatch::new()));
+        stopwatch.start();
 
         self.current_section = Some(name);
     }
@@ -49,12 +58,14 @@ impl Profiler {
         ensure!(self.current_section.is_some(),
                 "no stopwatches are currently running");
 
-        let mut stopwatch =
+        let &mut (_, ref mut stopwatch) =
             self.watches
                 .get_mut(self.current_section.unwrap())
                 .expect("current_section was set to an invalid value");
         stopwatch.lap();
         stopwatch.stop();
+
+        self.current_section = None;
 
         Ok(())
     }
@@ -63,7 +74,7 @@ impl Profiler {
     fn check_lap_counters(&self) -> bool {
         let lap_count = self.main_watch.number_of_laps();
 
-        for watch in self.watches.values() {
+        for &(_, ref watch) in self.watches.values() {
             if watch.number_of_laps() != lap_count {
                 return false;
             }
@@ -89,17 +100,23 @@ impl Profiler {
     pub fn get_data(&self) -> Result<ProfilingData> {
         debug_assert!(self.check_lap_counters(), "lap counters do not match");
 
-        let lap_count = self.main_watch.number_of_laps() as f64;
-        ensure!(lap_count > 0f64, "no data has been collected");
+        let lap_count = self.main_watch.number_of_laps();
+        ensure!(lap_count > 0, "no data has been collected");
+
+        let denom = (lap_count * 1_000_000) as f64;
+
+        let mut sections = self.watches.iter().collect::<Vec<_>>();
+        sections.sort_by_key(|&(_, &(pos, _))| pos);
 
         Ok(ProfilingData {
-               average_total_time: self.main_watch.total_time() as f64 / lap_count,
-               average_section_times: self.watches
-                                          .iter()
-                                          .map(|(&section, watch)| {
-                                                   (section, watch.total_time() as f64 / lap_count)
-                                               })
-                                          .collect(),
+               lap_count,
+               average_lap_time: self.main_watch.total_time() as f64 / denom,
+               average_section_times: sections.iter()
+                                              .map(|&(&section,
+                                                      &(_, ref watch))| {
+                                                       (section, watch.total_time() as f64 / denom)
+                                                   })
+                                              .collect(),
            })
     }
 }

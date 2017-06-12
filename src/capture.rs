@@ -1,7 +1,6 @@
 use error_chain::ChainedError;
 use ffmpeg::{Rational, format};
 use ffmpeg::frame::Video as VideoFrame;
-use fine_grained::Stopwatch;
 use std::cell::RefCell;
 use std::ptr;
 use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
@@ -11,6 +10,7 @@ use std::thread;
 use encode::{Encoder, EncoderParameters};
 use engine::Engine;
 use errors::*;
+use profiler::*;
 
 lazy_static! {
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
@@ -31,7 +31,7 @@ lazy_static! {
 }
 
 thread_local! {
-    static STOPWATCH: RefCell<Option<Stopwatch>> = RefCell::new(None);
+    pub static GAME_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
 }
 
 enum CaptureThreadEvent {
@@ -241,19 +241,6 @@ pub fn is_capturing() -> bool {
     *CAPTURING.read().unwrap()
 }
 
-pub fn capture_block_start() {
-    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().as_mut() {
-                       sw.start();
-                   });
-}
-
-pub fn capture_block_end() {
-    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().as_mut() {
-                       sw.lap();
-                       sw.stop();
-                   });
-}
-
 pub fn get_frametime() -> Option<f64> {
     TIME_BASE.read().unwrap().map(|x| x.into())
 }
@@ -265,14 +252,17 @@ pub fn stop(engine: &Engine) {
         .as_ref().unwrap()
         .send(CaptureThreadEvent::CaptureStop).unwrap();
 
-    STOPWATCH.with(|sw| if let Some(sw) = sw.borrow_mut().take() {
-        let frames = sw.number_of_laps();
+    GAME_THREAD_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
+        if let Ok(data) = p.get_data() {
+            let mut buf = format!("Captured {} frames. Game thread overhead: {:.3} msec:\n",
+                                  data.lap_count,
+                                  data.average_lap_time);
 
-        if frames > 0 {
-            engine.con_print(&format!("Captured {} frames in {} seconds (~{} msec of overhead per frame)\n",
-                                      frames,
-                                      sw.total_time() as f64 / 1_000_000_000f64,
-                                      (sw.total_time() / frames as u64) as f64 / 1_000_000f64));
+            for &(section, time) in &data.average_section_times {
+                buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
+            }
+
+            engine.con_print(&buf);
         }
     });
 }
@@ -410,7 +400,7 @@ command!(cap_start, |mut engine| {
                           .send(CaptureThreadEvent::CaptureStart(parameters))
                           .unwrap();
 
-    STOPWATCH.with(|sw| *sw.borrow_mut() = Some(Stopwatch::new()));
+    GAME_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
 });
 
 command!(cap_stop, |engine| {
