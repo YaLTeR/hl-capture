@@ -43,6 +43,8 @@ pub struct Pointers {
     Cvar_RegisterVariable: Function<unsafe extern "C" fn(*mut cvar::cvar_t)>,
     Host_FilterTime: Function<unsafe extern "C" fn(c_float) -> c_int>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
+    S_PaintChannels: Function<unsafe extern "C" fn(endtime: c_int)>,
+    S_TransferStereo16: Function<unsafe extern "C" fn(end: c_int)>,
     Sys_VID_FlipScreen: Function<unsafe extern "C" fn()>,
     VideoMode_GetCurrentVideoMode:
         Function<unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int)>,
@@ -168,6 +170,18 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     }
 }
 
+/// Mixes sound into the output buffer using the paintbuffer.
+#[no_mangle]
+pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
+    real!(S_PaintChannels)(endtime);
+}
+
+/// Transfers the contents of the paintbuffer into the output buffer.
+#[no_mangle]
+pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
+    real!(S_TransferStereo16)(end);
+}
+
 /// Flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
@@ -231,6 +245,8 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Cvar_RegisterVariable, "Cvar_RegisterVariable");
         find!(pointers, hw, Host_FilterTime, "Host_FilterTime");
         find!(pointers, hw, Memory_Init, "Memory_Init");
+        find!(pointers, hw, S_PaintChannels, "S_PaintChannels");
+        find!(pointers, hw, S_TransferStereo16, "S_TransferStereo16");
         find!(pointers, hw, Sys_VID_FlipScreen, "_Z18Sys_VID_FlipScreenv");
         find!(pointers,
               hw,
