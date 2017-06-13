@@ -52,6 +52,8 @@ pub struct Pointers {
 
     cls: Option<*mut client_static_t>,
     host_frametime: Option<*mut c_double>,
+    paintbuffer: Option<*mut portable_samplepair_t>, // [1026]
+    paintedtime: Option<*mut c_int>,
     realtime: Option<*mut c_double>,
     window_rect: Option<*mut RECT>,
 }
@@ -76,6 +78,12 @@ struct RECT {
 struct client_static_t {
     stuff: [u8; 0x4060],
     demoplayback: c_int,
+}
+
+#[repr(C)]
+struct portable_samplepair_t {
+    left: i32,
+    right: i32,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -258,6 +266,10 @@ fn refresh_pointers() -> Result<()> {
                               .chain_err(|| "couldn't find cls")? as _);
         pointers.host_frametime = Some(hw.sym("host_frametime")
                                          .chain_err(|| "couldn't find host_frametime")? as _);
+        pointers.paintbuffer = Some(hw.sym("paintbuffer")
+                                      .chain_err(|| "couldn't find paintbuffer")? as _);
+        pointers.paintedtime = Some(hw.sym("paintedtime")
+                                      .chain_err(|| "couldn't find paintedtime")? as _);
         pointers.realtime = Some(hw.sym("realtime")
                                    .chain_err(|| "couldn't find realtime")? as _);
         pointers.window_rect = Some(hw.sym("window_rect")
