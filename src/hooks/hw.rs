@@ -171,10 +171,10 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// Flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
-    // Print all errors that happened.
+    // Print all messages that happened.
     loop {
-        match capture::get_error() {
-            Some(e) => con_print(&format!("{}", e.display())),
+        match capture::get_message() {
+            Some(msg) => con_print(&msg),
             None => break,
         }
     }
@@ -203,7 +203,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("capture()"));
         capture::capture(buf, *POINTERS.read().unwrap().host_frametime.unwrap());
 
-        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop().unwrap());
+        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop(false).unwrap());
     }
 
     real!(Sys_VID_FlipScreen)();

@@ -2,6 +2,7 @@ use error_chain::ChainedError;
 use ffmpeg;
 use std::sync::{Mutex, ONCE_INIT, Once};
 
+use capture;
 use errors::*;
 
 lazy_static! {
@@ -183,6 +184,7 @@ impl Encoder {
     }
 
     pub fn take(&mut self, frame: &ffmpeg::frame::Video, frametime: f64) -> Result<()> {
+        capture::CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("color conversion"));
         self.converter
             .run(frame, &mut self.output_frame)
             .chain_err(|| "could not convert the frame to the correct format")?;
@@ -190,6 +192,7 @@ impl Encoder {
         let time_base: f64 = self.time_base.into();
         self.remainder += frametime / time_base;
 
+        capture::CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("push_frame()"));
         loop {
             // Push this frame as long as it takes up the most of the video frame.
             // TODO: move this logic somewhere to skip glReadPixels and other stuff

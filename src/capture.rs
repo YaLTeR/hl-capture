@@ -23,8 +23,8 @@ lazy_static! {
     /// Receives buffers to write pixels to.
     static ref BUF_RECEIVER: Mutex<Option<Receiver<Buffer>>> = Mutex::new(None);
 
-    /// Receives errors.
-    static ref ERROR_RECEIVER: Mutex<Option<Receiver<Error>>> = Mutex::new(None);
+    /// Receives messages to print to the game console.
+    static ref MESSAGE_RECEIVER: Mutex<Option<Receiver<String>>> = Mutex::new(None);
 
     /// Sends events and frames to encode to the capture thread.
     static ref SEND_TO_CAPTURE_THREAD: Mutex<Option<Sender<CaptureThreadEvent>>> = Mutex::new(None);
@@ -32,6 +32,7 @@ lazy_static! {
 
 thread_local! {
     pub static GAME_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
+    pub static CAPTURE_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
 }
 
 enum CaptureThreadEvent {
@@ -95,7 +96,7 @@ impl Buffer {
     }
 }
 
-fn capture_thread(buf_sender: &Sender<Buffer>, error_sender: &Sender<Error>, event_receiver: &Receiver<CaptureThreadEvent>) {
+fn capture_thread(buf_sender: &Sender<Buffer>, message_sender: &Sender<String>, event_receiver: &Receiver<CaptureThreadEvent>) {
     // Send the buffer to the game thread right away.
     buf_sender.send(Buffer::new()).unwrap();
 
@@ -111,16 +112,37 @@ fn capture_thread(buf_sender: &Sender<Buffer>, error_sender: &Sender<Error>, eve
 
     // Event loop for the capture thread.
     loop {
+        CAPTURE_THREAD_PROFILER.with(|p| if let Some(p) = p.borrow_mut().as_mut() {
+            p.start_section("event_receiver.recv()");
+        });
+
         match event_receiver.recv().unwrap() {
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
                 parameters = Some(params);
+
+                CAPTURE_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
             }
 
             CaptureThreadEvent::CaptureStop => {
+                CAPTURE_THREAD_PROFILER.with(|p| {
+                    let mut p = p.borrow_mut().take().unwrap();
+                    p.stop(true).unwrap();
+
+                    if let Ok(data) = p.get_data() {
+                        let mut buf = format!("Received {} frames, spent {:.3} msec per frame:\n", data.lap_count, data.average_lap_time);
+
+                        for &(section, time) in &data.average_section_times {
+                            buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
+                        }
+
+                        message_sender.send(buf).unwrap();
+                    }
+                });
+
                 if let Some(mut encoder) = (*ENCODER.lock().unwrap()).take() {
                     if let Err(e) = encoder.finish() {
-                        error_sender.send(e).unwrap();
+                        message_sender.send(format!("{}", e.display())).unwrap();
                     }
 
                     // The encoder is dropped here.
@@ -142,8 +164,9 @@ fn capture_thread(buf_sender: &Sender<Buffer>, error_sender: &Sender<Error>, eve
                                        &mut frame) {
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
+                    CAPTURE_THREAD_PROFILER.with(|p| *p.borrow_mut() = None);
 
-                    error_sender.send(e).unwrap();
+                    message_sender.send(format!("{}", e.display())).unwrap();
                 }
             }
         }
@@ -162,8 +185,10 @@ fn encode(buf: Buffer,
           parameters: &EncoderParameters,
           frame: &mut VideoFrame)
           -> Result<()> {
+    CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("buf.copy_to_frame()"));
     buf.copy_to_frame(frame);
 
+    CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("buf_sender.send()"));
     // We're done with buf, now it can receive the next pack of pixels.
     // IMPORTANT: if there is any error handling in this function before this line, make sure to
     // handle sending the buffer back in the error handling appropriately, as otherwise the game
@@ -171,6 +196,7 @@ fn encode(buf: Buffer,
     // TODO: restructure the code to get rid of the above condition.
     buf_sender.send(buf).unwrap();
 
+    CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("locking and starting the encoder"));
     // Let's encode the frame we just received.
     let mut encoder = ENCODER.lock().unwrap();
 
@@ -189,6 +215,8 @@ fn encode(buf: Buffer,
            .take(frame, frametime)
            .chain_err(|| "could not encode the frame")?;
 
+    CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop(false)).unwrap();
+
     Ok(())
 }
 
@@ -196,11 +224,11 @@ pub fn initialize() {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
         let (tx, rx) = channel::<Buffer>();
-        let (tx2, rx2) = channel::<Error>();
+        let (tx2, rx2) = channel::<String>();
         let (tx3, rx3) = channel::<CaptureThreadEvent>();
 
         *BUF_RECEIVER.lock().unwrap() = Some(rx);
-        *ERROR_RECEIVER.lock().unwrap() = Some(rx2);
+        *MESSAGE_RECEIVER.lock().unwrap() = Some(rx2);
         *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx3);
 
         thread::spawn(move || capture_thread(&tx, &tx2, &rx3));
@@ -220,9 +248,9 @@ pub fn get_buffer((width, height): (u32, u32)) -> Buffer {
     buf
 }
 
-pub fn get_error() -> Option<Error> {
-    match ERROR_RECEIVER.lock().unwrap().as_ref().unwrap().try_recv() {
-        Ok(e) => Some(e),
+pub fn get_message() -> Option<String> {
+    match MESSAGE_RECEIVER.lock().unwrap().as_ref().unwrap().try_recv() {
+        Ok(msg) => Some(msg),
         Err(TryRecvError::Empty) => None,
         Err(TryRecvError::Disconnected) => unreachable!(),
     }

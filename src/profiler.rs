@@ -38,7 +38,7 @@ impl Profiler {
     /// The currently running timer, if any, is stopped.
     pub fn start_section(&mut self, name: &'static str) {
         if self.current_section.is_some() {
-            self.stop_current_section().unwrap();
+            self.stop_current_section(false).unwrap();
         } else {
             self.main_watch.start();
         }
@@ -54,7 +54,9 @@ impl Profiler {
     }
 
     /// Stops the currently running timer.
-    fn stop_current_section(&mut self) -> Result<()> {
+    ///
+    /// If `cancel` is set to `true`, the measurement is discarded.
+    fn stop_current_section(&mut self, cancel: bool) -> Result<()> {
         ensure!(self.current_section.is_some(),
                 "no stopwatches are currently running");
 
@@ -62,7 +64,11 @@ impl Profiler {
             self.watches
                 .get_mut(self.current_section.unwrap())
                 .expect("current_section was set to an invalid value");
-        stopwatch.lap();
+
+        if !cancel {
+            stopwatch.lap();
+        }
+
         stopwatch.stop();
 
         self.current_section = None;
@@ -84,10 +90,15 @@ impl Profiler {
     }
 
     /// Stops timing the current run and increases the lap counter.
-    pub fn stop(&mut self) -> Result<()> {
-        self.stop_current_section()?;
+    ///
+    /// If `cancel` is set to `true`, the measurement is discarded.
+    pub fn stop(&mut self, cancel: bool) -> Result<()> {
+        self.stop_current_section(cancel)?;
 
-        self.main_watch.lap();
+        if !cancel {
+            self.main_watch.lap();
+        }
+
         self.main_watch.stop();
 
         Ok(())
@@ -103,18 +114,18 @@ impl Profiler {
         let lap_count = self.main_watch.number_of_laps();
         ensure!(lap_count > 0, "no data has been collected");
 
-        let denom = (lap_count * 1_000_000) as f64;
+        let denom = (lap_count * 1000) as u64;
 
         let mut sections = self.watches.iter().collect::<Vec<_>>();
         sections.sort_by_key(|&(_, &(pos, _))| pos);
 
         Ok(ProfilingData {
                lap_count,
-               average_lap_time: self.main_watch.total_time() as f64 / denom,
+               average_lap_time: (self.main_watch.total_time() / denom) as f64 / 1000f64,
                average_section_times: sections.iter()
                                               .map(|&(&section,
                                                       &(_, ref watch))| {
-                                                       (section, watch.total_time() as f64 / denom)
+                                                       (section, (watch.total_time() / denom) as f64 / 1000f64)
                                                    })
                                               .collect(),
            })
