@@ -5,10 +5,12 @@ use error_chain::ChainedError;
 use libc::*;
 use gl;
 use gl::types::*;
+use std::cell::RefCell;
 use std::cmp;
 use std::ffi::{CStr, CString};
 use std::mem;
 use std::ptr;
+use std::slice;
 use std::sync::RwLock;
 
 use capture;
@@ -55,6 +57,7 @@ pub struct Pointers {
     paintbuffer: Option<*mut portable_samplepair_t>, // [1026]
     paintedtime: Option<*mut c_int>,
     realtime: Option<*mut c_double>,
+    shm: Option<*mut *mut dma_t>,
     window_rect: Option<*mut RECT>,
 }
 
@@ -64,6 +67,19 @@ pub struct Pointers {
 // at the same time. Although reading/writing to a pointer is already unsafe?
 unsafe impl Send for Pointers {}
 unsafe impl Sync for Pointers {}
+
+static mut CAPTURE_SOUND: bool = false;
+static mut SOUND_REMAINDER: f64 = 0f64;
+static mut SOUND_CAPTURE_MODE: SoundCaptureMode = SoundCaptureMode::Normal;
+
+thread_local! {
+    static AUDIO_BUFFER: RefCell<Option<capture::AudioBuffer>> = RefCell::new(None);
+}
+
+enum SoundCaptureMode {
+    Normal,
+    Remaining,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -82,8 +98,23 @@ struct client_static_t {
 
 #[repr(C)]
 struct portable_samplepair_t {
-    left: i32,
-    right: i32,
+    left: c_int,
+    right: c_int,
+}
+
+#[repr(C)]
+struct dma_t {
+    gamealive: c_int,
+    soundalive: c_int,
+    splitbuffer: c_int,
+    channels: c_int,
+    samples: c_int,
+    submission_chunk: c_int,
+    samplepos: c_int,
+    samplebits: c_int,
+    speed: c_int,
+    dmaspeed: c_int,
+    buffer: *mut c_uchar,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -181,12 +212,67 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// Mixes sound into the output buffer using the paintbuffer.
 #[no_mangle]
 pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
-    real!(S_PaintChannels)(endtime);
+    if !capture::is_capturing() {
+        CAPTURE_SOUND = false;
+        real!(S_PaintChannels)(endtime);
+        return;
+    }
+
+    if CAPTURE_SOUND {
+        let mut engine = Engine::new();
+
+        let paintedtime = *POINTERS.read().unwrap().paintedtime.unwrap();
+        let frametime = match SOUND_CAPTURE_MODE {
+            SoundCaptureMode::Normal => *POINTERS.read().unwrap().host_frametime.unwrap(),
+            SoundCaptureMode::Remaining => cap_sound_extra.get(&engine).parse(&mut engine).unwrap_or(0f64)
+        };
+        let speed = (**POINTERS.read().unwrap().shm.unwrap()).speed;
+        let samples = frametime * speed as f64 + SOUND_REMAINDER;
+        let samples_rounded = match SOUND_CAPTURE_MODE {
+            SoundCaptureMode::Normal => samples.floor(),
+            SoundCaptureMode::Remaining => samples.ceil()
+        };
+
+        SOUND_REMAINDER = samples - samples_rounded;
+
+        AUDIO_BUFFER.with(|b| {
+            let mut buf = capture::get_audio_buffer();
+            buf.data_mut().clear();
+            *b.borrow_mut() = Some(buf);
+        });
+
+        real!(S_PaintChannels)(paintedtime + samples_rounded as i32);
+
+        AUDIO_BUFFER.with(|b| capture::capture_audio(b.borrow_mut().take().unwrap()));
+
+        CAPTURE_SOUND = false;
+    }
 }
 
 /// Transfers the contents of the paintbuffer into the output buffer.
 #[no_mangle]
 pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
+    if CAPTURE_SOUND {
+        AUDIO_BUFFER.with(|b| {
+            let mut buf = b.borrow_mut();
+            let mut buf = buf.as_mut().unwrap().data_mut();
+
+            let paintedtime = *POINTERS.read().unwrap().paintedtime.unwrap();
+            let paintbuffer = slice::from_raw_parts_mut(POINTERS.read().unwrap().paintbuffer.unwrap(), 1026);
+
+            let mut engine = Engine::new();
+            let volume = (cap_volume.get(&engine).parse(&mut engine).unwrap_or(0.4f32) * 256f32) as i32;
+
+            for i in 0..(end - paintedtime) as usize {
+                // Clamping as done in Snd_WriteLinearBlastStereo16().
+                let l16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
+                let r16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].right * volume) >> 8)) as i16;
+
+                buf.push((l16, r16));
+            }
+        })
+    }
+
     real!(S_TransferStereo16)(end);
 }
 
@@ -226,6 +312,8 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         capture::capture(buf, *POINTERS.read().unwrap().host_frametime.unwrap());
 
         capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop(false).unwrap());
+
+        CAPTURE_SOUND = true;
     }
 
     real!(Sys_VID_FlipScreen)();
@@ -272,6 +360,8 @@ fn refresh_pointers() -> Result<()> {
                                       .chain_err(|| "couldn't find paintedtime")? as _);
         pointers.realtime = Some(hw.sym("realtime")
                                    .chain_err(|| "couldn't find realtime")? as _);
+        pointers.shm = Some(hw.sym("shm")
+                              .chain_err(|| "couldn't find shm")? as _);
         pointers.window_rect = Some(hw.sym("window_rect")
                                       .chain_err(|| "couldn't find window_rect")? as _);
     }
@@ -375,4 +465,20 @@ pub unsafe fn get_resolution() -> (u32, u32) {
     (width as u32, height as u32)
 }
 
+/// Resets the sound capture remainder.
+pub fn reset_sound_capture_remainder(_: &Engine) {
+    unsafe { SOUND_REMAINDER = 0f64; }
+}
+
+/// Captures the remaining and extra sound.
+pub fn capture_remaining_sound(_: &Engine) {
+    unsafe {
+        SOUND_CAPTURE_MODE = SoundCaptureMode::Remaining;
+        CAPTURE_SOUND = true;
+        S_PaintChannels(0);
+    }
+}
+
 cvar!(cap_playdemostop, "1");
+cvar!(cap_sound_extra, "0");
+cvar!(cap_volume, "0.4");
