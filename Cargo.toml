@@ -22,7 +22,8 @@ gl = "0.6"
 
 [dependencies.ffmpeg]
 git = "https://github.com/yalter/rust-ffmpeg.git"
-branch = "various-fixes"
+branch = "plane-size-fix"
+# path = "../rust-ffmpeg"
 default-features = false
 features = ["codec", "format", "software-resampling", "software-scaling"]
 
