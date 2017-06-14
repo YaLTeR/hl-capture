@@ -263,7 +263,7 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
             let mut engine = Engine::new();
             let volume = (cap_volume.get(&engine).parse(&mut engine).unwrap_or(0.4f32) * 256f32) as i32;
 
-            for i in 0..(end - paintedtime) as usize {
+            for i in 0..(end - paintedtime) as usize * 2 {
                 // Clamping as done in Snd_WriteLinearBlastStereo16().
                 let l16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
                 let r16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].right * volume) >> 8)) as i16;
@@ -476,6 +476,7 @@ pub fn capture_remaining_sound(_: &Engine) {
         SOUND_CAPTURE_MODE = SoundCaptureMode::Remaining;
         CAPTURE_SOUND = true;
         S_PaintChannels(0);
+        SOUND_CAPTURE_MODE = SoundCaptureMode::Normal;
     }
 }
 

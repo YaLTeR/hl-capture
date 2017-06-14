@@ -157,8 +157,23 @@ impl Encoder {
             }
 
             encoder.set_bit_rate(parameters.audio_bitrate);
-            encoder.set_rate(44100);
-            encoder.set_time_base((1, 44100));
+
+            let rate = if let Some(mut rates) = audio_codec.rates() {
+                let mut best_rate = rates.next().unwrap();
+
+                for r in rates {
+                    if (r - 22050).abs() < (best_rate - 22050).abs() {
+                        best_rate = r;
+                    }
+                }
+
+                best_rate
+            } else {
+                22050
+            };
+
+            encoder.set_rate(rate);
+            encoder.set_time_base((1, rate));
 
             if let Some(mut formats) = audio_codec.formats() {
                 encoder.set_format(formats.next().unwrap());
@@ -188,7 +203,7 @@ impl Encoder {
                                  .chain_err(|| "could not open the audio encoder",)?;
             stream.set_parameters(&encoder);
 
-            stream.set_time_base((1, 44100));
+            stream.set_time_base((1, 22050));
 
             (encoder, stream.index())
         };
@@ -224,10 +239,10 @@ impl Encoder {
         }
 
         let mut audio_output_frame = ffmpeg::frame::Audio::new(audio_encoder.format(), audio_frame_size, audio_encoder.channel_layout());
-        audio_output_frame.set_rate(44100);
+        audio_output_frame.set_rate(audio_encoder.rate());
 
         let mut audio_input_frame = ffmpeg::frame::Audio::new(ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Packed), audio_frame_size, ffmpeg::channel_layout::STEREO);
-        audio_input_frame.set_rate(11025);
+        audio_input_frame.set_rate(22050);
 
         let resampler = ffmpeg::software::resampling::Context::get(audio_input_frame.format(), audio_input_frame.channel_layout(), audio_input_frame.rate(), audio_output_frame.format(), audio_output_frame.channel_layout(), audio_output_frame.rate())
             .chain_err(|| "could not get the resampling context")?;
@@ -282,7 +297,6 @@ impl Encoder {
     }
 
     fn push_audio_frame(&mut self) -> Result<()> {
-        // println!("push_audio_frame, audio_pts = {}, samples = {}", self.audio_pts, self.audio_output_frame.samples());
         self.audio_output_frame.set_pts(Some(self.audio_pts));
         self.audio_pts += self.audio_output_frame.samples() as i64;
 
@@ -291,7 +305,6 @@ impl Encoder {
                .chain_err(|| "could not encode the audio frame")? {
             self.packet
                 .rescale_ts((1, self.audio_output_frame.rate() as i32), self.audio_stream_time_base);
-            // println!("packet pts: {:?}, dts: {:?}, duration: {:?}", self.packet.pts(), self.packet.dts(), self.packet.duration());
             self.packet.set_stream(self.audio_stream_index);
 
             self.packet
@@ -329,8 +342,6 @@ impl Encoder {
 
     /// Encodes 16-bit signed interleaved 2-channel stereo sound.
     pub fn take_audio(&mut self, samples: &Vec<(i16, i16)>) -> Result<()> {
-        println!("take_audio: samples.len() = {}", samples.len());
-
         let mut samples_pos = 0;
         while samples_pos < samples.len() {
             let available_samples = samples.len() - samples_pos;
@@ -384,8 +395,8 @@ impl Encoder {
                 ptr::write_bytes(self.audio_input_frame.data_mut(0)[self.audio_position * 4..(self.audio_position + available_space) * 4].as_mut_ptr(), 0, available_space * 4);
             }
 
-            println!("delay: {:?}", self.resampler.run(&self.audio_input_frame, &mut self.audio_output_frame)
-                .chain_err(|| "could not resample the sound")?);
+            self.resampler.run(&self.audio_input_frame, &mut self.audio_output_frame)
+                .chain_err(|| "could not resample the sound")?;
             self.push_audio_frame()?;
 
             while let Some(_) = self.resampler.delay() {
@@ -453,7 +464,7 @@ pub fn initialize() {
 
         *VIDEO_ENCODER.lock().unwrap() = ffmpeg::encoder::find_by_name("libx264")
             .and_then(|e| e.video().ok());
-        *AUDIO_ENCODER.lock().unwrap() = ffmpeg::encoder::find_by_name("libmp3lame")
+        *AUDIO_ENCODER.lock().unwrap() = ffmpeg::encoder::find_by_name("aac")
             .and_then(|e| e.audio().ok());
     });
 }
@@ -533,10 +544,10 @@ command!(cap_set_audio_encoder, |engine| {
                 buf.push_str("any\n");
             }
 
-            buf.push_str("Channel layouts: ");
+            buf.push_str("Sample rates: ");
 
-            if let Some(channel_layouts) = audio.channel_layouts() {
-                buf.push_str(&format!("{:?}\n", channel_layouts.collect::<Vec<_>>()));
+            if let Some(rates) = audio.rates() {
+                buf.push_str(&format!("{:?}\n", rates.collect::<Vec<_>>()));
             } else {
                 buf.push_str("any\n");
             }
