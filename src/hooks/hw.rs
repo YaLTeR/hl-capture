@@ -42,8 +42,10 @@ pub struct Pointers {
     Cmd_Argc: Function<unsafe extern "C" fn() -> c_int>,
     Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
+    Con_ToggleConsole_f: Function<unsafe extern "C" fn()>,
     Cvar_RegisterVariable: Function<unsafe extern "C" fn(*mut cvar::cvar_t)>,
     Host_FilterTime: Function<unsafe extern "C" fn(c_float) -> c_int>,
+    Key_Event: Function<unsafe extern "C" fn(key: c_int, down: c_int)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
     S_PaintChannels: Function<unsafe extern "C" fn(endtime: c_int)>,
     S_TransferStereo16: Function<unsafe extern "C" fn(end: c_int)>,
@@ -71,6 +73,7 @@ unsafe impl Sync for Pointers {}
 static mut CAPTURE_SOUND: bool = false;
 static mut SOUND_REMAINDER: f64 = 0f64;
 static mut SOUND_CAPTURE_MODE: SoundCaptureMode = SoundCaptureMode::Normal;
+static mut INSIDE_KEY_EVENT: bool = false;
 
 thread_local! {
     static AUDIO_BUFFER: RefCell<Option<capture::AudioBuffer>> = RefCell::new(None);
@@ -169,6 +172,16 @@ pub unsafe extern "C" fn CL_Disconnect() {
     real!(CL_Disconnect)();
 }
 
+/// Handler for the `toggleconsole` command.
+#[no_mangle]
+pub unsafe extern "C" fn Con_ToggleConsole_f() {
+    let mut engine = Engine::new();
+
+    if !INSIDE_KEY_EVENT || cap_allow_tabbing_out_in_demos.get(&engine).parse(&mut engine).unwrap_or(0) == 0 {
+        real!(Con_ToggleConsole_f)();
+    }
+}
+
 /// Calculates the frame time and limits the FPS.
 #[no_mangle]
 pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
@@ -187,6 +200,14 @@ pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
     }
 
     rv
+}
+
+/// Handles key callbacks.
+#[no_mangle]
+pub unsafe extern "C" fn Key_Event(key: c_int, down: c_int) {
+    INSIDE_KEY_EVENT = true;
+    real!(Key_Event)(key, down);
+    INSIDE_KEY_EVENT = false;
 }
 
 /// Initializes the hunk memory.
@@ -338,8 +359,10 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Cmd_Argc, "Cmd_Argc");
         find!(pointers, hw, Cmd_Argv, "Cmd_Argv");
         find!(pointers, hw, Con_Printf, "Con_Printf");
+        find!(pointers, hw, Con_ToggleConsole_f, "Con_ToggleConsole_f");
         find!(pointers, hw, Cvar_RegisterVariable, "Cvar_RegisterVariable");
         find!(pointers, hw, Host_FilterTime, "Host_FilterTime");
+        find!(pointers, hw, Key_Event, "Key_Event");
         find!(pointers, hw, Memory_Init, "Memory_Init");
         find!(pointers, hw, S_PaintChannels, "S_PaintChannels");
         find!(pointers, hw, S_TransferStereo16, "S_TransferStereo16");
@@ -480,6 +503,7 @@ pub fn capture_remaining_sound(_: &Engine) {
     }
 }
 
+cvar!(cap_allow_tabbing_out_in_demos, "1");
 cvar!(cap_playdemostop, "1");
 cvar!(cap_sound_extra, "0");
 cvar!(cap_volume, "0.4");

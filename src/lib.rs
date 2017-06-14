@@ -32,7 +32,9 @@ mod sdl;
 
 pub use self::hooks::hw::RunListenServer;
 pub use self::hooks::hw::CL_Disconnect;
+pub use self::hooks::hw::Con_ToggleConsole_f;
 pub use self::hooks::hw::Host_FilterTime;
+pub use self::hooks::hw::Key_Event;
 pub use self::hooks::hw::Memory_Init;
 pub use self::hooks::hw::S_PaintChannels;
 pub use self::hooks::hw::S_TransferStereo16;
