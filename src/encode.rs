@@ -135,7 +135,9 @@ impl Encoder {
                                   ("cpu-usage", parameters.vpx_cpu_usage.as_str()),
                                   ("threads", parameters.vpx_threads.as_str())]
                                      .iter()
-                                     .map(|x| *x)) // By-value iterators?
+                                     .filter_map(|&(name, value)| {
+                                         value.split_whitespace().next().map(|v| (name, v))
+                                     }))
                           .collect();
 
             let encoder = encoder.open_as_with(video_codec, encoder_settings)
