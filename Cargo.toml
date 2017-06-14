@@ -21,7 +21,8 @@ libc = "0.2"
 gl = "0.6"
 
 [dependencies.ffmpeg]
-git = "https://github.com/meh/rust-ffmpeg.git"
+git = "https://github.com/yalter/rust-ffmpeg.git"
+branch = "various-fixes"
 default-features = false
 features = ["codec", "format", "software-resampling", "software-scaling"]
 
