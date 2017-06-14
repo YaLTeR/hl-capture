@@ -90,14 +90,14 @@ impl VideoBuffer {
         }
 
         // Copy the pixel data into the frame.
-        let linesize = unsafe { ((*frame.as_ptr()).linesize[0]) as u32 };
+        let stride = frame.stride(0) as u32;
         let mut data = frame.data_mut(0);
 
         for y in 0..self.height {
             unsafe {
                 ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * 3) as isize),
                                          data.as_mut_ptr()
-                                             .offset(((self.height - y - 1) * linesize) as
+                                             .offset(((self.height - y - 1) * stride) as
                                                      isize),
                                          (self.width * 3) as usize);
             }
