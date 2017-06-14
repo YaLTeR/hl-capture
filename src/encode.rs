@@ -247,7 +247,6 @@ impl Encoder {
         let resampler = ffmpeg::software::resampling::Context::get(audio_input_frame.format(), audio_input_frame.channel_layout(), audio_input_frame.rate(), audio_output_frame.format(), audio_output_frame.channel_layout(), audio_output_frame.rate())
             .chain_err(|| "could not get the resampling context")?;
 
-        println!("audio frame size: {}", audio_frame_size);
 
         let packet = ffmpeg::Packet::empty();
 
