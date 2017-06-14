@@ -37,7 +37,7 @@ pub struct Pointers {
                                                    *mut c_void)
                                                    -> c_int>,
 
-    CL_StopPlayback: Function<unsafe extern "C" fn()>,
+    CL_Disconnect: Function<unsafe extern "C" fn()>,
     Cmd_AddCommand: Function<unsafe extern "C" fn(*const c_char, *mut c_void)>,
     Cmd_Argc: Function<unsafe extern "C" fn() -> c_int>,
     Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
@@ -155,9 +155,9 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     rv
 }
 
-/// Stops the demo playback.
+/// Stops the currently running game, returning to the main menu.
 #[no_mangle]
-pub unsafe extern "C" fn CL_StopPlayback() {
+pub unsafe extern "C" fn CL_Disconnect() {
     if capture::is_capturing() && (*POINTERS.read().unwrap().cls.unwrap()).demoplayback != 0 {
         let mut engine = Engine::new();
 
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn CL_StopPlayback() {
         }
     }
 
-    real!(CL_StopPlayback)();
+    real!(CL_Disconnect)();
 }
 
 /// Calculates the frame time and limits the FPS.
@@ -333,7 +333,7 @@ fn refresh_pointers() -> Result<()> {
               hw,
               RunListenServer,
               "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_");
-        find!(pointers, hw, CL_StopPlayback, "CL_StopPlayback");
+        find!(pointers, hw, CL_Disconnect, "CL_Disconnect");
         find!(pointers, hw, Cmd_AddCommand, "Cmd_AddCommand");
         find!(pointers, hw, Cmd_Argc, "Cmd_Argc");
         find!(pointers, hw, Cmd_Argv, "Cmd_Argv");
