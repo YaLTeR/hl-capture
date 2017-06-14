@@ -203,7 +203,7 @@ impl Encoder {
                                  .chain_err(|| "could not open the audio encoder",)?;
             stream.set_parameters(&encoder);
 
-            stream.set_time_base((1, 22050));
+            stream.set_time_base((1, rate));
 
             (encoder, stream.index())
         };
