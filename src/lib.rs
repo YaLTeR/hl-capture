@@ -9,6 +9,8 @@ extern crate fine_grained;
 extern crate lazy_static;
 extern crate libc;
 extern crate gl;
+extern crate glx;
+extern crate ocl;
 extern crate sdl2_sys;
 
 mod errors {
@@ -33,6 +35,7 @@ mod sdl;
 pub use self::hooks::hw::RunListenServer;
 pub use self::hooks::hw::CL_Disconnect;
 pub use self::hooks::hw::Con_ToggleConsole_f;
+pub use self::hooks::hw::GL_EndRendering;
 pub use self::hooks::hw::Host_FilterTime;
 pub use self::hooks::hw::Key_Event;
 pub use self::hooks::hw::Memory_Init;

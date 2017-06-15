@@ -9,3 +9,9 @@ pub fn get_proc_address(name: &str) -> *const c_void {
                                             .as_ptr())
     }
 }
+
+pub fn get_current_context() -> u32 {
+    unsafe {
+        sdl2_sys::SDL_GL_GetCurrentContext() as u32
+    }
+}

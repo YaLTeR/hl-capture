@@ -36,6 +36,7 @@ lazy_static! {
 
 thread_local! {
     pub static GAME_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
+    pub static AUDIO_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
     // pub static CAPTURE_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
 }
 
@@ -73,7 +74,7 @@ impl VideoBuffer {
                      width,
                      height);
 
-            self.data.resize((width * height * 3) as usize, 0);
+            self.data.resize((width * height * 4) as usize, 0);
             self.width = width;
             self.height = height;
         }
@@ -86,7 +87,7 @@ impl VideoBuffer {
     pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
         // Make sure frame is of correct size.
         if self.width != frame.width() || self.height != frame.height() {
-            *frame = VideoFrame::new(format::Pixel::RGB24, self.width, self.height);
+            *frame = VideoFrame::new(format::Pixel::RGBA, self.width, self.height);
         }
 
         // Copy the pixel data into the frame.
@@ -95,11 +96,11 @@ impl VideoBuffer {
 
         for y in 0..self.height {
             unsafe {
-                ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * 3) as isize),
+                ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * 4) as isize),
                                          data.as_mut_ptr()
                                              .offset(((self.height - y - 1) * stride) as
                                                      isize),
-                                         (self.width * 3) as usize);
+                                         (self.width * 4) as usize);
             }
         }
     }
@@ -356,6 +357,18 @@ pub fn stop(engine: &Engine) {
             engine.con_print(&buf);
         }
     });
+    AUDIO_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
+        if let Ok(data) = p.get_data() {
+            let mut buf = format!("Audio overhead: {:.3} msec:\n",
+                                  data.average_lap_time);
+
+            for &(section, time) in &data.average_section_times {
+                buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
+            }
+
+            engine.con_print(&buf);
+        }
+    });
 }
 
 /// Parses the given string and returns a time base.
@@ -504,6 +517,7 @@ command!(cap_start, |mut engine| {
                           .unwrap();
 
     GAME_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
+    AUDIO_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
 
     hw::reset_sound_capture_remainder(&engine);
 });

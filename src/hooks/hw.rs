@@ -4,7 +4,9 @@
 use error_chain::ChainedError;
 use libc::*;
 use gl;
+use glx;
 use gl::types::*;
+use ocl;
 use std::cell::RefCell;
 use std::cmp;
 use std::ffi::{CStr, CString};
@@ -44,6 +46,7 @@ pub struct Pointers {
     Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
     Con_ToggleConsole_f: Function<unsafe extern "C" fn()>,
     Cvar_RegisterVariable: Function<unsafe extern "C" fn(*mut cvar::cvar_t)>,
+    GL_EndRendering: Function<unsafe extern "C" fn()>,
     Host_FilterTime: Function<unsafe extern "C" fn(c_float) -> c_int>,
     Key_Event: Function<unsafe extern "C" fn(key: c_int, down: c_int)>,
     Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
@@ -59,6 +62,7 @@ pub struct Pointers {
     paintbuffer: Option<*mut portable_samplepair_t>, // [1026]
     paintedtime: Option<*mut c_int>,
     realtime: Option<*mut c_double>,
+    s_BackBufferFBO: Option<*mut FBO_Container_t>,
     shm: Option<*mut *mut dma_t>,
     window_rect: Option<*mut RECT>,
 }
@@ -74,9 +78,27 @@ static mut CAPTURE_SOUND: bool = false;
 static mut SOUND_REMAINDER: f64 = 0f64;
 static mut SOUND_CAPTURE_MODE: SoundCaptureMode = SoundCaptureMode::Normal;
 static mut INSIDE_KEY_EVENT: bool = false;
+static KERNEL_SRC: &str = r#"
+    __kernel void increase_blue(read_only image2d_t src_image,
+                                write_only image2d_t dst_image) {
+        int2 coord = (int2)(get_global_id(0), get_global_id(1));
+        float4 pixel = read_imagef(src_image, coord);
+        pixel += (float4)(0.0, 0.0, 0.5, 0.0);
+        write_imagef(dst_image, coord, pixel);
+    }
+"#;
 
 thread_local! {
     static AUDIO_BUFFER: RefCell<Option<capture::AudioBuffer>> = RefCell::new(None);
+    static PROQUE: ocl::ProQue = ocl::ProQue::builder()
+        .context(ocl::Context::builder()
+                 .gl_context(sdl::get_current_context())
+                 .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
+                 .build()
+                 .expect("Context build()"))
+        .src(KERNEL_SRC)
+        .build()
+        .expect("ProQue build()");
 }
 
 enum SoundCaptureMode {
@@ -94,12 +116,22 @@ struct RECT {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct FBO_Container_t {
+    FBO: GLuint,
+    CB: GLuint,
+    DB: GLuint,
+    Tex: GLuint,
+}
+
+#[repr(C)]
 struct client_static_t {
     stuff: [u8; 0x4060],
     demoplayback: c_int,
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 struct portable_samplepair_t {
     left: c_int,
     right: c_int,
@@ -182,6 +214,12 @@ pub unsafe extern "C" fn Con_ToggleConsole_f() {
     }
 }
 
+/// Blits the FBOs onto the backbuffer and flips.
+#[no_mangle]
+pub unsafe extern "C" fn GL_EndRendering() {
+    real!(GL_EndRendering)();
+}
+
 /// Calculates the frame time and limits the FPS.
 #[no_mangle]
 pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
@@ -227,6 +265,10 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     gl::PixelStorei::load_with(|s| sdl::get_proc_address(s) as _);
     if !gl::PixelStorei::is_loaded() {
         panic!("could not load glPixelStorei()");
+    }
+    gl::Finish::load_with(|s| sdl::get_proc_address(s) as _);
+    if !gl::Finish::is_loaded() {
+        panic!("could not load glFinish()");
     }
 }
 
@@ -274,6 +316,7 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
 #[no_mangle]
 pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
     if CAPTURE_SOUND {
+        // capture::AUDIO_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("S_TransferStereo16() overhead"));
         AUDIO_BUFFER.with(|b| {
             let mut buf = b.borrow_mut();
             let mut buf = buf.as_mut().unwrap().data_mut();
@@ -291,7 +334,8 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
 
                 buf.push((l16, r16));
             }
-        })
+        });
+        // capture::AUDIO_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop(false).unwrap());
     }
 
     real!(S_TransferStereo16)(end);
@@ -315,19 +359,79 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("get_buffer()"));
         let mut buf = capture::get_buffer((w, h));
 
-        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::PixelStorei()"));
-        // Our buffer expects 1-byte alignment.
-        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+        let texture = (*POINTERS.read().unwrap().s_BackBufferFBO.unwrap()).Tex;
+        if texture != 0 {
+            capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::Finish()"));
+            gl::Finish();
 
-        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::ReadPixels()"));
-        // Get the pixels!
-        gl::ReadPixels(0,
-                       0,
-                       w as GLsizei,
-                       h as GLsizei,
-                       gl::RGB,
-                       gl::UNSIGNED_BYTE,
-                       buf.as_mut_slice().as_mut_ptr() as _);
+            PROQUE.with(|pro_que| {
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("ImageDescriptor::new()"));
+                let descr = ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
+                                                                w as usize,
+                                                                h as usize,
+                                                                1,
+                                                                1,
+                                                                0,
+                                                                0,
+                                                                None);
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("Image::from_gl_texture()"));
+                let image = ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
+                                                        ocl::flags::MEM_READ_ONLY,
+                                                        descr,
+                                                        ocl::core::GlTextureTarget::GlTexture2d,
+                                                        0,
+                                                        texture)
+                    .expect("ocl::Image::from_gl_texture()");
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("Building dst_image"));
+                let dst_image = ocl::Image::<u8>::builder()
+                    .channel_order(ocl::enums::ImageChannelOrder::Rgba)
+                    .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
+                    .image_type(ocl::enums::MemObjectType::Image2d)
+                    .dims((w, h))
+                    .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
+                    .queue(pro_que.queue().clone())
+                    .build()
+                    .expect("Image build");
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl_acquire()"));
+                image.cmd().gl_acquire().enq().expect("gl_acquire()");
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("Creating kernel"));
+                let kernel = pro_que.create_kernel("increase_blue")
+                    .unwrap()
+                    .gws((w, h))
+                    .arg_img(&image)
+                    .arg_img(&dst_image);
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("kernel.enq()"));
+                kernel.enq().expect("kernel.enq()");
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("pro_que.finish()"));
+                pro_que.finish().expect("pro_que.finish()");
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("dst_image.read()"));
+                dst_image.read(buf.as_mut_slice()).enq().expect("dst_image.read()");
+
+                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl_release()"));
+                image.cmd().gl_release().enq().expect("gl_release()");
+            });
+        } else {
+            capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::PixelStorei()"));
+            // Our buffer expects 1-byte alignment.
+            gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+
+            capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::ReadPixels()"));
+            // Get the pixels!
+            gl::ReadPixels(0,
+                           0,
+                           w as GLsizei,
+                           h as GLsizei,
+                           gl::RGB,
+                           gl::UNSIGNED_BYTE,
+                           buf.as_mut_slice().as_mut_ptr() as _);
+        }
 
         capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("capture()"));
         capture::capture(buf, *POINTERS.read().unwrap().host_frametime.unwrap());
@@ -361,6 +465,7 @@ fn refresh_pointers() -> Result<()> {
         find!(pointers, hw, Con_Printf, "Con_Printf");
         find!(pointers, hw, Con_ToggleConsole_f, "Con_ToggleConsole_f");
         find!(pointers, hw, Cvar_RegisterVariable, "Cvar_RegisterVariable");
+        find!(pointers, hw, GL_EndRendering, "GL_EndRendering");
         find!(pointers, hw, Host_FilterTime, "Host_FilterTime");
         find!(pointers, hw, Key_Event, "Key_Event");
         find!(pointers, hw, Memory_Init, "Memory_Init");
@@ -383,6 +488,8 @@ fn refresh_pointers() -> Result<()> {
                                       .chain_err(|| "couldn't find paintedtime")? as _);
         pointers.realtime = Some(hw.sym("realtime")
                                    .chain_err(|| "couldn't find realtime")? as _);
+        pointers.s_BackBufferFBO = Some(hw.sym("s_BackBufferFBO")
+                                          .chain_err(|| "couldn't find s_BackBufferFBO")? as _);
         pointers.shm = Some(hw.sym("shm")
                               .chain_err(|| "couldn't find shm")? as _);
         pointers.window_rect = Some(hw.sym("window_rect")

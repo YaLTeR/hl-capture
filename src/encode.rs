@@ -240,7 +240,7 @@ impl Encoder {
         let audio_stream_time_base = context.stream(audio_stream_index).unwrap().time_base();
 
         let converter = software::converter((width, height),
-                                            format::Pixel::RGB24,
+                                            format::Pixel::RGBA,
                                             video_encoder.format())
             .chain_err(|| "could not get the color conversion context")?;
 
