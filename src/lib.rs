@@ -25,7 +25,6 @@ mod cvar;
 mod dl;
 mod encode;
 mod engine;
-mod function;
 mod hooks {
     pub mod hw;
 }

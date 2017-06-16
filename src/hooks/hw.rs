@@ -13,7 +13,6 @@ use std::ffi::{CStr, CString};
 use std::mem;
 use std::ptr;
 use std::slice;
-use std::sync::RwLock;
 
 use capture;
 use command;
@@ -22,55 +21,50 @@ use dl;
 use encode;
 use engine::Engine;
 use errors::*;
-use function::Function;
 use sdl;
 
-lazy_static!{
-    static ref POINTERS: RwLock<Pointers> = RwLock::new(Pointers::default());
+// Stuff from these variables should ONLY be accessed from the main game thread.
+static mut FUNCTIONS: Option<Functions> = None;
+static mut POINTERS: Option<Pointers> = None;
+
+struct Functions {
+    RunListenServer: unsafe extern "C" fn(*mut c_void,
+                                          *mut c_char,
+                                          *mut c_char,
+                                          *mut c_char,
+                                          *mut c_void,
+                                          *mut c_void)
+                                          -> c_int,
+
+    CL_Disconnect: unsafe extern "C" fn(),
+    Cmd_AddCommand: unsafe extern "C" fn(*const c_char, *mut c_void),
+    Cmd_Argc: unsafe extern "C" fn() -> c_int,
+    Cmd_Argv: unsafe extern "C" fn(c_int) -> *const c_char,
+    Con_Printf: unsafe extern "C" fn(*const c_char),
+    Con_ToggleConsole_f: unsafe extern "C" fn(),
+    Cvar_RegisterVariable: unsafe extern "C" fn(*mut cvar::cvar_t),
+    GL_EndRendering: unsafe extern "C" fn(),
+    Host_FilterTime: unsafe extern "C" fn(c_float) -> c_int,
+    Key_Event: unsafe extern "C" fn(key: c_int, down: c_int),
+    Memory_Init: unsafe extern "C" fn(*mut c_void, c_int),
+    S_PaintChannels: unsafe extern "C" fn(endtime: c_int),
+    S_TransferStereo16: unsafe extern "C" fn(end: c_int),
+    Sys_VID_FlipScreen: unsafe extern "C" fn(),
+    VideoMode_GetCurrentVideoMode: unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int),
+    VideoMode_IsWindowed: unsafe extern "C" fn() -> c_int,
 }
 
-#[derive(Debug, Default)]
-pub struct Pointers {
-    RunListenServer: Function<unsafe extern "C" fn(*mut c_void,
-                                                   *mut c_char,
-                                                   *mut c_char,
-                                                   *mut c_char,
-                                                   *mut c_void,
-                                                   *mut c_void)
-                                                   -> c_int>,
-
-    CL_Disconnect: Function<unsafe extern "C" fn()>,
-    Cmd_AddCommand: Function<unsafe extern "C" fn(*const c_char, *mut c_void)>,
-    Cmd_Argc: Function<unsafe extern "C" fn() -> c_int>,
-    Cmd_Argv: Function<unsafe extern "C" fn(c_int) -> *const c_char>,
-    Con_Printf: Function<unsafe extern "C" fn(*const c_char)>,
-    Con_ToggleConsole_f: Function<unsafe extern "C" fn()>,
-    Cvar_RegisterVariable: Function<unsafe extern "C" fn(*mut cvar::cvar_t)>,
-    GL_EndRendering: Function<unsafe extern "C" fn()>,
-    Host_FilterTime: Function<unsafe extern "C" fn(c_float) -> c_int>,
-    Key_Event: Function<unsafe extern "C" fn(key: c_int, down: c_int)>,
-    Memory_Init: Function<unsafe extern "C" fn(*mut c_void, c_int)>,
-    S_PaintChannels: Function<unsafe extern "C" fn(endtime: c_int)>,
-    S_TransferStereo16: Function<unsafe extern "C" fn(end: c_int)>,
-    Sys_VID_FlipScreen: Function<unsafe extern "C" fn()>,
-    VideoMode_GetCurrentVideoMode:
-        Function<unsafe extern "C" fn(*mut c_int, *mut c_int, *mut c_int)>,
-    VideoMode_IsWindowed: Function<unsafe extern "C" fn() -> c_int>,
-
-    cls: Option<*mut client_static_t>,
-    host_frametime: Option<*mut c_double>,
-    paintbuffer: Option<*mut portable_samplepair_t>, // [1026]
-    paintedtime: Option<*mut c_int>,
-    realtime: Option<*mut c_double>,
-    s_BackBufferFBO: Option<*mut FBO_Container_t>,
-    shm: Option<*mut *mut dma_t>,
-    window_rect: Option<*mut RECT>,
+struct Pointers {
+    cls: *mut client_static_t,
+    host_frametime: *mut c_double,
+    paintbuffer: *mut portable_samplepair_t, // [1026]
+    paintedtime: *mut c_int,
+    realtime: *mut c_double,
+    s_BackBufferFBO: *mut FBO_Container_t,
+    shm: *mut *mut dma_t,
+    window_rect: *mut RECT,
 }
 
-// TODO: think about how to deal with unsafety here.
-// The compiler complaining about *mut not being Send/Sync is perfectly valid here.
-// Our safe RwLock cannot guarantee there isn't some game thread accessing the values
-// at the same time. Although reading/writing to a pointer is already unsafe?
 unsafe impl Send for Pointers {}
 unsafe impl Sync for Pointers {}
 
@@ -158,13 +152,14 @@ struct dma_t {
 /// Note: `_restart` also causes this function to exit, in this case the launcher
 /// unloads and reloads hw.so and this function is called again as if it was a fresh start.
 #[export_name = "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"]
-pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
-                                         basedir: *mut c_char,
-                                         cmdline: *mut c_char,
-                                         postRestartCmdLineArgs: *mut c_char,
-                                         launcherFactory: *mut c_void,
-                                         filesystemFactory: *mut c_void)
-                                         -> c_int {
+pub unsafe extern "C" fn RunListenServer(
+    instance: *mut c_void,
+    basedir: *mut c_char,
+    cmdline: *mut c_char,
+    postRestartCmdLineArgs: *mut c_char,
+    launcherFactory: *mut c_void,
+    filesystemFactory: *mut c_void,
+) -> c_int {
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
     if let Err(ref e) = refresh_pointers().chain_err(|| "error refreshing pointers") {
@@ -177,12 +172,14 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     // Initialize the capturing.
     capture::initialize();
 
-    let rv = real!(RunListenServer)(instance,
-                                    basedir,
-                                    cmdline,
-                                    postRestartCmdLineArgs,
-                                    launcherFactory,
-                                    filesystemFactory);
+    let rv = real!(RunListenServer)(
+        instance,
+        basedir,
+        cmdline,
+        postRestartCmdLineArgs,
+        launcherFactory,
+        filesystemFactory,
+    );
 
     // Since hw.so is getting unloaded, reset all pointers.
     reset_pointers();
@@ -193,10 +190,13 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
 /// Stops the currently running game, returning to the main menu.
 #[no_mangle]
 pub unsafe extern "C" fn CL_Disconnect() {
-    if capture::is_capturing() && (*POINTERS.read().unwrap().cls.unwrap()).demoplayback != 0 {
+    if capture::is_capturing() && (*ptr!(cls)).demoplayback != 0 {
         let mut engine = Engine::new();
 
-        if cap_playdemostop.get(&engine).parse(&mut engine).unwrap_or(0) != 0 {
+        if cap_playdemostop.get(&engine).parse(&mut engine).unwrap_or(
+            0,
+        ) != 0
+        {
             capture::stop(&engine);
         }
     }
@@ -209,7 +209,11 @@ pub unsafe extern "C" fn CL_Disconnect() {
 pub unsafe extern "C" fn Con_ToggleConsole_f() {
     let mut engine = Engine::new();
 
-    if !INSIDE_KEY_EVENT || cap_allow_tabbing_out_in_demos.get(&engine).parse(&mut engine).unwrap_or(0) == 0 {
+    if !INSIDE_KEY_EVENT ||
+        cap_allow_tabbing_out_in_demos.get(&engine)
+                                      .parse(&mut engine)
+                                      .unwrap_or(0) == 0
+    {
         real!(Con_ToggleConsole_f)();
     }
 }
@@ -223,16 +227,16 @@ pub unsafe extern "C" fn GL_EndRendering() {
 /// Calculates the frame time and limits the FPS.
 #[no_mangle]
 pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
-    let old_realtime = *POINTERS.read().unwrap().realtime.unwrap();
+    let old_realtime = *ptr!(realtime);
 
     let rv = real!(Host_FilterTime)(time);
 
     // TODO: this will NOT set the frametime on the first frame of capture / demo playback and WILL
     // set the frametime on the first frame of not capturing. This needs to be fixed somehow.
-    if capture::is_capturing() && (*POINTERS.read().unwrap().cls.unwrap()).demoplayback != 0 {
+    if capture::is_capturing() && (*ptr!(cls)).demoplayback != 0 {
         if let Some(frametime) = capture::get_frametime() {
-            *POINTERS.read().unwrap().host_frametime.unwrap() = frametime;
-            *POINTERS.read().unwrap().realtime.unwrap() = old_realtime + frametime;
+            *ptr!(host_frametime) = frametime;
+            *ptr!(realtime) = old_realtime + frametime;
             return 1;
         }
     }
@@ -284,16 +288,20 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
     if CAPTURE_SOUND {
         let mut engine = Engine::new();
 
-        let paintedtime = *POINTERS.read().unwrap().paintedtime.unwrap();
+        let paintedtime = *ptr!(paintedtime);
         let frametime = match SOUND_CAPTURE_MODE {
-            SoundCaptureMode::Normal => *POINTERS.read().unwrap().host_frametime.unwrap(),
-            SoundCaptureMode::Remaining => cap_sound_extra.get(&engine).parse(&mut engine).unwrap_or(0f64)
+            SoundCaptureMode::Normal => *ptr!(host_frametime),
+            SoundCaptureMode::Remaining => {
+                cap_sound_extra.get(&engine).parse(&mut engine).unwrap_or(
+                    0f64,
+                )
+            }
         };
-        let speed = (**POINTERS.read().unwrap().shm.unwrap()).speed;
+        let speed = (**ptr!(shm)).speed;
         let samples = frametime * speed as f64 + SOUND_REMAINDER;
         let samples_rounded = match SOUND_CAPTURE_MODE {
             SoundCaptureMode::Normal => samples.floor(),
-            SoundCaptureMode::Remaining => samples.ceil()
+            SoundCaptureMode::Remaining => samples.ceil(),
         };
 
         SOUND_REMAINDER = samples - samples_rounded;
@@ -316,26 +324,29 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
 #[no_mangle]
 pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
     if CAPTURE_SOUND {
-        // capture::AUDIO_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("S_TransferStereo16() overhead"));
         AUDIO_BUFFER.with(|b| {
             let mut buf = b.borrow_mut();
             let mut buf = buf.as_mut().unwrap().data_mut();
 
-            let paintedtime = *POINTERS.read().unwrap().paintedtime.unwrap();
-            let paintbuffer = slice::from_raw_parts_mut(POINTERS.read().unwrap().paintbuffer.unwrap(), 1026);
+            let paintedtime = *ptr!(paintedtime);
+            let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
 
             let mut engine = Engine::new();
-            let volume = (cap_volume.get(&engine).parse(&mut engine).unwrap_or(0.4f32) * 256f32) as i32;
+            let volume = (cap_volume.get(&engine).parse(&mut engine).unwrap_or(0.4f32) *
+                256f32) as i32;
 
             for i in 0..(end - paintedtime) as usize * 2 {
                 // Clamping as done in Snd_WriteLinearBlastStereo16().
-                let l16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
-                let r16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].right * volume) >> 8)) as i16;
+                let l16 =
+                    cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
+                let r16 = cmp::min(
+                    32767,
+                    cmp::max(-32768, (paintbuffer[i].right * volume) >> 8),
+                ) as i16;
 
                 buf.push((l16, r16));
             }
         });
-        // capture::AUDIO_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop(false).unwrap());
     }
 
     real!(S_TransferStereo16)(end);
@@ -353,38 +364,66 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     }
 
     if capture::is_capturing() {
-        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("get_resolution()"));
+        capture::GAME_THREAD_PROFILER.with(|p| {
+            p.borrow_mut().as_mut().unwrap().start_section(
+                "get_resolution()",
+            )
+        });
         let (w, h) = get_resolution();
 
-        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("get_buffer()"));
+        capture::GAME_THREAD_PROFILER.with(|p| {
+            p.borrow_mut().as_mut().unwrap().start_section(
+                "get_buffer()",
+            )
+        });
         let mut buf = capture::get_buffer((w, h));
 
-        let texture = (*POINTERS.read().unwrap().s_BackBufferFBO.unwrap()).Tex;
+        let texture = (*ptr!(s_BackBufferFBO)).Tex;
         if texture != 0 {
-            capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::Finish()"));
+            capture::GAME_THREAD_PROFILER.with(|p| {
+                p.borrow_mut().as_mut().unwrap().start_section(
+                    "gl::Finish()",
+                )
+            });
             gl::Finish();
 
             PROQUE.with(|pro_que| {
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("ImageDescriptor::new()"));
-                let descr = ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
-                                                                w as usize,
-                                                                h as usize,
-                                                                1,
-                                                                1,
-                                                                0,
-                                                                0,
-                                                                None);
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "ImageDescriptor::new()",
+                    )
+                });
+                let descr = ocl::builders::ImageDescriptor::new(
+                    ocl::enums::MemObjectType::Image2d,
+                    w as usize,
+                    h as usize,
+                    1,
+                    1,
+                    0,
+                    0,
+                    None,
+                );
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("Image::from_gl_texture()"));
-                let image = ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
-                                                        ocl::flags::MEM_READ_ONLY,
-                                                        descr,
-                                                        ocl::core::GlTextureTarget::GlTexture2d,
-                                                        0,
-                                                        texture)
-                    .expect("ocl::Image::from_gl_texture()");
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "Image::from_gl_texture()",
+                    )
+                });
+                let image = ocl::Image::<u8>::from_gl_texture(
+                    pro_que.queue(),
+                    ocl::flags::MEM_READ_ONLY,
+                    descr,
+                    ocl::core::GlTextureTarget::GlTexture2d,
+                    0,
+                    texture,
+                )
+                            .expect("ocl::Image::from_gl_texture()");
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("Building dst_image"));
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "Building dst_image",
+                    )
+                });
                 let dst_image = ocl::Image::<u8>::builder()
                     .channel_order(ocl::enums::ImageChannelOrder::Rgba)
                     .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
@@ -395,48 +434,88 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                     .build()
                     .expect("Image build");
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl_acquire()"));
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "gl_acquire()",
+                    )
+                });
                 image.cmd().gl_acquire().enq().expect("gl_acquire()");
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("Creating kernel"));
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "Creating kernel",
+                    )
+                });
                 let kernel = pro_que.create_kernel("increase_blue")
-                    .unwrap()
-                    .gws((w, h))
-                    .arg_img(&image)
-                    .arg_img(&dst_image);
+                                    .unwrap()
+                                    .gws((w, h))
+                                    .arg_img(&image)
+                                    .arg_img(&dst_image);
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("kernel.enq()"));
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "kernel.enq()",
+                    )
+                });
                 kernel.enq().expect("kernel.enq()");
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("pro_que.finish()"));
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "pro_que.finish()",
+                    )
+                });
                 pro_que.finish().expect("pro_que.finish()");
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("dst_image.read()"));
-                dst_image.read(buf.as_mut_slice()).enq().expect("dst_image.read()");
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "dst_image.read()",
+                    )
+                });
+                dst_image.read(buf.as_mut_slice()).enq().expect(
+                    "dst_image.read()",
+                );
 
-                capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl_release()"));
+                capture::GAME_THREAD_PROFILER.with(|p| {
+                    p.borrow_mut().as_mut().unwrap().start_section(
+                        "gl_release()",
+                    )
+                });
                 image.cmd().gl_release().enq().expect("gl_release()");
             });
         } else {
-            capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::PixelStorei()"));
+            capture::GAME_THREAD_PROFILER.with(|p| {
+                p.borrow_mut().as_mut().unwrap().start_section(
+                    "gl::PixelStorei()",
+                )
+            });
             // Our buffer expects 1-byte alignment.
             gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
 
-            capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("gl::ReadPixels()"));
+            capture::GAME_THREAD_PROFILER.with(|p| {
+                p.borrow_mut().as_mut().unwrap().start_section(
+                    "gl::ReadPixels()",
+                )
+            });
             // Get the pixels!
-            gl::ReadPixels(0,
-                           0,
-                           w as GLsizei,
-                           h as GLsizei,
-                           gl::RGB,
-                           gl::UNSIGNED_BYTE,
-                           buf.as_mut_slice().as_mut_ptr() as _);
+            gl::ReadPixels(
+                0,
+                0,
+                w as GLsizei,
+                h as GLsizei,
+                gl::RGB,
+                gl::UNSIGNED_BYTE,
+                buf.as_mut_slice().as_mut_ptr() as _,
+            );
         }
 
-        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("capture()"));
-        capture::capture(buf, *POINTERS.read().unwrap().host_frametime.unwrap());
+        capture::GAME_THREAD_PROFILER.with(|p| {
+            p.borrow_mut().as_mut().unwrap().start_section("capture()")
+        });
+        capture::capture(buf, *ptr!(host_frametime));
 
-        capture::GAME_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop(false).unwrap());
+        capture::GAME_THREAD_PROFILER.with(
+            |p| p.borrow_mut().as_mut().unwrap().stop(false).unwrap(),
+        );
 
         CAPTURE_SOUND = true;
     }
@@ -447,61 +526,58 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 }
 
 /// Obtains and stores all necessary function and variable addresses.
-fn refresh_pointers() -> Result<()> {
-    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
-        .chain_err(|| "couldn't load hw.so")?;
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
+unsafe fn refresh_pointers() -> Result<()> {
+    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).chain_err(
+        || "couldn't load hw.so",
+    )?;
 
-    let mut pointers = POINTERS.write().unwrap();
+    FUNCTIONS = Some(Functions {
+        RunListenServer: find!(
+            hw,
+            "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"
+        ),
+        CL_Disconnect: find!(hw, "CL_Disconnect"),
+        Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
+        Cmd_Argc: find!(hw, "Cmd_Argc"),
+        Cmd_Argv: find!(hw, "Cmd_Argv"),
+        Con_Printf: find!(hw, "Con_Printf"),
+        Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
+        Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
+        GL_EndRendering: find!(hw, "GL_EndRendering"),
+        Host_FilterTime: find!(hw, "Host_FilterTime"),
+        Key_Event: find!(hw, "Key_Event"),
+        Memory_Init: find!(hw, "Memory_Init"),
+        S_PaintChannels: find!(hw, "S_PaintChannels"),
+        S_TransferStereo16: find!(hw, "S_TransferStereo16"),
+        Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
+        VideoMode_GetCurrentVideoMode: find!(hw, "VideoMode_GetCurrentVideoMode"),
+        VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"),
+    });
 
-    unsafe {
-        find!(pointers,
-              hw,
-              RunListenServer,
-              "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_");
-        find!(pointers, hw, CL_Disconnect, "CL_Disconnect");
-        find!(pointers, hw, Cmd_AddCommand, "Cmd_AddCommand");
-        find!(pointers, hw, Cmd_Argc, "Cmd_Argc");
-        find!(pointers, hw, Cmd_Argv, "Cmd_Argv");
-        find!(pointers, hw, Con_Printf, "Con_Printf");
-        find!(pointers, hw, Con_ToggleConsole_f, "Con_ToggleConsole_f");
-        find!(pointers, hw, Cvar_RegisterVariable, "Cvar_RegisterVariable");
-        find!(pointers, hw, GL_EndRendering, "GL_EndRendering");
-        find!(pointers, hw, Host_FilterTime, "Host_FilterTime");
-        find!(pointers, hw, Key_Event, "Key_Event");
-        find!(pointers, hw, Memory_Init, "Memory_Init");
-        find!(pointers, hw, S_PaintChannels, "S_PaintChannels");
-        find!(pointers, hw, S_TransferStereo16, "S_TransferStereo16");
-        find!(pointers, hw, Sys_VID_FlipScreen, "_Z18Sys_VID_FlipScreenv");
-        find!(pointers,
-              hw,
-              VideoMode_GetCurrentVideoMode,
-              "VideoMode_GetCurrentVideoMode");
-        find!(pointers, hw, VideoMode_IsWindowed, "VideoMode_IsWindowed");
-
-        pointers.cls = Some(hw.sym("cls")
-                              .chain_err(|| "couldn't find cls")? as _);
-        pointers.host_frametime = Some(hw.sym("host_frametime")
-                                         .chain_err(|| "couldn't find host_frametime")? as _);
-        pointers.paintbuffer = Some(hw.sym("paintbuffer")
-                                      .chain_err(|| "couldn't find paintbuffer")? as _);
-        pointers.paintedtime = Some(hw.sym("paintedtime")
-                                      .chain_err(|| "couldn't find paintedtime")? as _);
-        pointers.realtime = Some(hw.sym("realtime")
-                                   .chain_err(|| "couldn't find realtime")? as _);
-        pointers.s_BackBufferFBO = Some(hw.sym("s_BackBufferFBO")
-                                          .chain_err(|| "couldn't find s_BackBufferFBO")? as _);
-        pointers.shm = Some(hw.sym("shm")
-                              .chain_err(|| "couldn't find shm")? as _);
-        pointers.window_rect = Some(hw.sym("window_rect")
-                                      .chain_err(|| "couldn't find window_rect")? as _);
-    }
+    POINTERS = Some(Pointers {
+        cls: find!(hw, "cls"),
+        host_frametime: find!(hw, "host_frametime"),
+        paintbuffer: find!(hw, "paintbuffer"),
+        paintedtime: find!(hw, "paintedtime"),
+        realtime: find!(hw, "realtime"),
+        s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
+        shm: find!(hw, "shm"),
+        window_rect: find!(hw, "window_rect"),
+    });
 
     Ok(())
 }
 
 /// Resets all pointers to their default values.
-fn reset_pointers() {
-    *POINTERS.write().unwrap() = Pointers::default();
+///
+/// # Safety
+/// Unsafe because this function should only be called from the main game thread.
+unsafe fn reset_pointers() {
+    FUNCTIONS = None;
+    POINTERS = None;
 }
 
 /// Registers console commands and variables.
@@ -515,10 +591,10 @@ unsafe fn register_cvars_and_commands() {
 
     let mut engine = Engine::new();
     for cvar in &cvar::CVARS {
-        if let Err(ref e) =
-            cvar.get(&engine)
-                .register(&mut engine)
-                .chain_err(|| "error registering a console variable") {
+        if let Err(ref e) = cvar.get(&engine).register(&mut engine).chain_err(
+            || "error registering a console variable",
+        )
+        {
             panic!("{}", e.display());
         }
     }
@@ -547,9 +623,11 @@ pub unsafe fn register_variable(cvar: &mut cvar::cvar_t) {
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
 pub unsafe fn con_print(string: &str) {
-    real!(Con_Printf)(CString::new(string.replace('%', "%%"))
-                          .expect("string cannot contain null bytes")
-                          .as_ptr())
+    real!(Con_Printf)(
+        CString::new(string.replace('%', "%%"))
+            .expect("string cannot contain null bytes")
+            .as_ptr(),
+    )
 }
 
 /// Gets the console command argument count.
@@ -575,12 +653,12 @@ pub unsafe fn cmd_argv(index: u32) -> String {
 ///
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
-pub unsafe fn get_resolution() -> (u32, u32) {
+unsafe fn get_resolution() -> (u32, u32) {
     let mut width;
     let mut height;
 
     if real!(VideoMode_IsWindowed)() != 0 {
-        let window_rect = *POINTERS.read().unwrap().window_rect.unwrap();
+        let window_rect = *ptr!(window_rect);
         width = window_rect.right - window_rect.left;
         height = window_rect.bottom - window_rect.top;
     } else {
@@ -597,7 +675,9 @@ pub unsafe fn get_resolution() -> (u32, u32) {
 
 /// Resets the sound capture remainder.
 pub fn reset_sound_capture_remainder(_: &Engine) {
-    unsafe { SOUND_REMAINDER = 0f64; }
+    unsafe {
+        SOUND_REMAINDER = 0f64;
+    }
 }
 
 /// Captures the remaining and extra sound.
