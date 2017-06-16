@@ -27,6 +27,7 @@ cache:
   directories:
     - $HOME/ffmpeg
     - $HOME/SDL2
+    - $HOME/OpenCL
     - $HOME/.cargo
 
 before_install:
@@ -34,6 +35,8 @@ before_install:
   - ls -R "$HOME/ffmpeg"
   - bash .travis/install-sdl2.sh
   - ls -R "$HOME/SDL2"
+  - bash .travis/install-opencl.sh
+  - ls -R "$HOME/OpenCL"
   - export PKG_CONFIG_PATH="$HOME/ffmpeg/lib/pkgconfig:$HOME/SDL2/lib/pkgconfig"
   - export LD_LIBRARY_PATH="$HOME/ffmpeg/lib"
 
@@ -41,6 +44,9 @@ install:
   - rustup target add i686-unknown-linux-gnu
 
 script:
+  - mkdir -p target/i686-unknown-linux-gnu/debug/deps
+  - cp $HOME/OpenCL/lib/libOpenCL.so* target/i686-unknown-linux-gnu/debug/deps/
+
   - cargo build --verbose
 
   # This rustdoc command requires that only one .rlib is present
