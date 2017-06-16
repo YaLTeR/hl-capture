@@ -1,68 +1,55 @@
 sudo: false
-
 language: rust
-
 rust:
-  - stable
-  - beta
-  - nightly
-
+- stable
+- beta
+- nightly
 matrix:
   allow_failures:
-    - rust: nightly
-
+  - rust: nightly
 addons:
   apt:
     packages:
-      - gcc-multilib
-      - yasm
-      - zlib1g-dev:i386
-
+    - gcc-multilib
+    - yasm
+    - zlib1g-dev:i386
 env:
   global:
-    - RUST_BACKTRACE=1
-    - PKG_CONFIG_ALLOW_CROSS=1
-
+  - RUST_BACKTRACE=1
+  - PKG_CONFIG_ALLOW_CROSS=1
 cache:
   directories:
-    - $HOME/ffmpeg
-    - $HOME/SDL2
-    - $HOME/OpenCL
-    - $HOME/.cargo
-
+  - "$HOME/ffmpeg"
+  - "$HOME/SDL2"
+  - "$HOME/OpenCL"
+  - "$HOME/.cargo"
 before_install:
-  - bash .travis/install-ffmpeg.sh
-  - ls -R "$HOME/ffmpeg"
-  - bash .travis/install-sdl2.sh
-  - ls -R "$HOME/SDL2"
-  - bash .travis/install-opencl.sh
-  - ls -R "$HOME/OpenCL"
-  - export PKG_CONFIG_PATH="$HOME/ffmpeg/lib/pkgconfig:$HOME/SDL2/lib/pkgconfig"
-  - export LD_LIBRARY_PATH="$HOME/ffmpeg/lib"
-
+- bash .travis/install-ffmpeg.sh
+- ls -R "$HOME/ffmpeg"
+- bash .travis/install-sdl2.sh
+- ls -R "$HOME/SDL2"
+- bash .travis/install-opencl.sh
+- ls -R "$HOME/OpenCL"
+- export PKG_CONFIG_PATH="$HOME/ffmpeg/lib/pkgconfig:$HOME/SDL2/lib/pkgconfig"
+- export LD_LIBRARY_PATH="$HOME/ffmpeg/lib"
 install:
-  - rustup target add i686-unknown-linux-gnu
-
+- rustup target add i686-unknown-linux-gnu
 script:
-  - mkdir -p target/i686-unknown-linux-gnu/debug/deps
-  - cp $HOME/OpenCL/lib/libOpenCL.so* target/i686-unknown-linux-gnu/debug/deps/
-
-  - cargo build --verbose
-
-  # This rustdoc command requires that only one .rlib is present
-  # in target/i686-unknown-linux-gnu/debug/deps for each crate.
-  # Cargo build and cargo test each generate a set of .rlibs.
-  # Thus, rustdoc has to go after cargo build but before cargo test.
-  - OUT_DIR=`cat out_dir` rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments" --crate-name hl_capture src/lib.rs --target i686-unknown-linux-gnu -o docs -L target/i686-unknown-linux-gnu/debug/deps
-  - cp .travis/index.html docs/
-
-  - cargo test --verbose
-
+- mkdir -p target/i686-unknown-linux-gnu/debug/deps
+- cp $HOME/OpenCL/lib/libOpenCL.so* target/i686-unknown-linux-gnu/debug/deps/
+- cargo build --verbose
+- OUT_DIR=`cat out_dir` rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments"
+  --crate-name hl_capture src/lib.rs --target i686-unknown-linux-gnu -o docs -L target/i686-unknown-linux-gnu/debug/deps
+- cp .travis/index.html docs/
+- cargo test --verbose
 deploy:
   provider: pages
   skip_cleanup: true
-  github_token: $GITHUB_TOKEN
+  github_token: "$GITHUB_TOKEN"
   local_dir: docs
   on:
     branch: master
     rust: stable
+notifications:
+  webhooks:
+    - secure: nb42xCToG3zdG5JZIHUnWLaUavu7w5PLivQEP7mJXx/J84vqTbJOcNog/9t294VMsIRqWbePthh/ISxNOB/OjEvWHaONsbO6T/OO88KWfzZLnTQdOtMckBnnlbI35hrd48nDHlwBxpItWjLj8xoc0ajBtSUI7L4+lXgjCRdoOboN8HgBJMc5p1Cd0xHwvy5Q54GYfwsLiywJHoNiuidqT9msUC+jsF8YbrtHewsjdoOsjFfCaMtRF8qzzmVPsNQ7BE9QAMo8UiPBzL6KiBt55BtKHXTzB5rGkU0UafUlSyzqpIvq71XabzXrq3p1Px612WNhNS1IKbAK4KiYB34wo9FFRtlqSlNdXPnrkJjYZbfGqUXmrwIKLhslOa51WugB6wQQBQxaLX5YppkybtbJ0HjU4IYB8mefboQFFSQQXw/Pq3/nR19MzZ7h6LL/QCqAacPnBZQtvPhmOZpmwTFD6hBjc7LB4ES+lzs7+O91uEOgOm3PMAPRtMsHWQb3wEfFrQjwjIsBYqtfX6sF8wcr+elJGTG+AMknNVp28jNcqeAoVz6urJ5IAOvzeaCqZ65tfL5KgHsNH2Y8oxUr0hqvQgjcUwuALM9L1qfAGPCBPlyjmwLKCqe/PjweOrcFj+Xz9ZzXEL2EC5WtBTyi8EnsarIEHenngMBaIJ3Z5b2ZZlU=
