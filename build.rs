@@ -17,7 +17,7 @@ fn main() {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| !e.file_type().is_dir())
-        .filter(|e| e.path().extension() == Some(OsStr::new(".rs")))
+        .filter(|e| e.path().extension() == Some(OsStr::new("rs")))
     {
         let mut path = String::new();
 
@@ -108,10 +108,7 @@ fn make_command_array(commands: Vec<String>) -> String {
 }
 
 fn make_cvar_array(cvars: Vec<String>) -> String {
-    let mut buf = format!(
-        "pub static CVARS: [&::engine::CVarGuard; {}] = [",
-        cvars.len()
-    );
+    let mut buf = format!("pub static CVARS: [&::cvar::CVar; {}] = [", cvars.len());
 
     let mut iter = cvars.into_iter();
 
