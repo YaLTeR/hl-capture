@@ -1,7 +1,3 @@
-// macro_rules! cstr {
-//     ($s:expr) => ($s as *const _ as *const ::libc::c_char)
-// }
-
 /// Returns the original function pointer.
 ///
 /// This should only be used from the main game thread.
@@ -69,15 +65,13 @@ macro_rules! command {
 macro_rules! cvar {
     ($name:ident, $default_value:expr) => (
         #[allow(non_upper_case_globals)]
-        pub static $name: ::engine::CVarGuard = ::engine::CVarGuard {
-            cvar: ::cvar::CVar {
-                engine_cvar: {
-                    static mut ENGINE_CVAR: ::cvar::cvar_t = ::cvar::EMPTY_CVAR_T;
-                    unsafe { &ENGINE_CVAR as *const _ as *mut _ }
-                },
-                default_value: $default_value,
-                name: stringify!($name),
-            }
+        pub static $name: ::cvar::CVar = ::cvar::CVar {
+            engine_cvar: {
+                static mut ENGINE_CVAR: ::cvar::cvar_t = ::cvar::EMPTY_CVAR_T;
+                unsafe { &ENGINE_CVAR as *const _ as *mut _ }
+            },
+            default_value: $default_value,
+            name: stringify!($name),
         };
     )
 }

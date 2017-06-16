@@ -193,10 +193,7 @@ pub unsafe extern "C" fn CL_Disconnect() {
     if capture::is_capturing() && (*ptr!(cls)).demoplayback != 0 {
         let mut engine = Engine::new();
 
-        if cap_playdemostop.get(&engine).parse(&mut engine).unwrap_or(
-            0,
-        ) != 0
-        {
+        if cap_playdemostop.parse(&mut engine).unwrap_or(0) != 0 {
             capture::stop(&engine);
         }
     }
@@ -210,8 +207,7 @@ pub unsafe extern "C" fn Con_ToggleConsole_f() {
     let mut engine = Engine::new();
 
     if !INSIDE_KEY_EVENT ||
-        cap_allow_tabbing_out_in_demos.get(&engine)
-                                      .parse(&mut engine)
+        cap_allow_tabbing_out_in_demos.parse(&mut engine)
                                       .unwrap_or(0) == 0
     {
         real!(Con_ToggleConsole_f)();
@@ -291,11 +287,7 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
         let paintedtime = *ptr!(paintedtime);
         let frametime = match SOUND_CAPTURE_MODE {
             SoundCaptureMode::Normal => *ptr!(host_frametime),
-            SoundCaptureMode::Remaining => {
-                cap_sound_extra.get(&engine).parse(&mut engine).unwrap_or(
-                    0f64,
-                )
-            }
+            SoundCaptureMode::Remaining => cap_sound_extra.parse(&mut engine).unwrap_or(0f64),
         };
         let speed = (**ptr!(shm)).speed;
         let samples = frametime * speed as f64 + SOUND_REMAINDER;
@@ -332,8 +324,7 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
             let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
 
             let mut engine = Engine::new();
-            let volume = (cap_volume.get(&engine).parse(&mut engine).unwrap_or(0.4f32) *
-                256f32) as i32;
+            let volume = (cap_volume.parse(&mut engine).unwrap_or(0.4f32) * 256f32) as i32;
 
             for i in 0..(end - paintedtime) as usize * 2 {
                 // Clamping as done in Snd_WriteLinearBlastStereo16().
@@ -591,7 +582,7 @@ unsafe fn register_cvars_and_commands() {
 
     let mut engine = Engine::new();
     for cvar in &cvar::CVARS {
-        if let Err(ref e) = cvar.get(&engine).register(&mut engine).chain_err(
+        if let Err(ref e) = cvar.register(&mut engine).chain_err(
             || "error registering a console variable",
         )
         {

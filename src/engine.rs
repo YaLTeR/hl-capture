@@ -24,18 +24,6 @@ pub struct EngineCVarGuard<'a> {
     _borrow_guard: &'a mut Engine,
 }
 
-/// A Send+Sync `CVar` wrapper.
-///
-/// This wrapper can only be used from the main game thread.
-pub struct CVarGuard {
-    /// This field has to be public because there's no const fn.
-    /// It shouldn't be accessed manually.
-    pub cvar: CVar,
-}
-
-unsafe impl Send for CVarGuard {}
-unsafe impl Sync for CVarGuard {}
-
 impl Engine {
     /// Creates an instance of Engine.
     ///
@@ -69,8 +57,10 @@ impl Engine {
     pub fn register_variable(&mut self, cvar: &CVar) -> Result<()> {
         let mut engine_cvar = self.get_engine_cvar(cvar);
 
-        ensure!(engine_cvar.string_is_non_null(),
-                "attempted to register a variable with null string");
+        ensure!(
+            engine_cvar.string_is_non_null(),
+            "attempted to register a variable with null string"
+        );
 
         unsafe {
             hw::register_variable(&mut engine_cvar);
@@ -102,14 +92,5 @@ impl<'a> Deref for EngineCVarGuard<'a> {
 impl<'a> DerefMut for EngineCVarGuard<'a> {
     fn deref_mut(&mut self) -> &mut cvar_t {
         self.engine_cvar
-    }
-}
-
-impl CVarGuard {
-    /// Returns the wrapped CVar.
-    ///
-    /// Engine in the arguments statically ensures this is called only when appropriate.
-    pub fn get(&self, _: &Engine) -> &CVar {
-        &self.cvar
     }
 }

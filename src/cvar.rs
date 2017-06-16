@@ -40,6 +40,9 @@ pub struct CVar {
     pub name: &'static str,
 }
 
+unsafe impl Send for CVar {}
+unsafe impl Sync for CVar {}
+
 impl cvar_t {
     pub fn string_is_non_null(&self) -> bool {
         !self.string.is_null()
@@ -63,25 +66,27 @@ impl CVar {
             let mut engine_cvar = engine.get_engine_cvar(self);
 
             if engine_cvar.name.is_null() {
-                let name_cstring = CString::new(self.name)
-                    .chain_err(|| "could not convert the CVar name to CString")?;
+                let name_cstring = CString::new(self.name).chain_err(
+                    || "could not convert the CVar name to CString",
+                )?;
 
                 // HACK: leak this CString. It's staying around till the end anyway.
                 engine_cvar.name = name_cstring.into_raw();
             }
 
             // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
-            let default_value_cstring =
-                CString::new(self.default_value)
-                    .chain_err(|| "could not convert default CVar value to CString")?;
+            let default_value_cstring = CString::new(self.default_value).chain_err(
+                || "could not convert default CVar value to CString",
+            )?;
 
             let ptr = default_value_cstring.into_raw();
             engine_cvar.string = ptr;
             ptr
         };
 
-        engine.register_variable(self)
-              .chain_err(|| "could not register the variable")?;
+        engine.register_variable(self).chain_err(
+            || "could not register the variable",
+        )?;
 
         // Free that CString from above.
         unsafe { CString::from_raw(ptr) };
@@ -92,8 +97,10 @@ impl CVar {
     /// Returns the string this variable is set to.
     pub fn to_string(&self, engine: &mut Engine) -> Result<String> {
         let engine_cvar = engine.get_engine_cvar(self);
-        ensure!(engine_cvar.string_is_non_null(),
-                "the CVar string pointer was null");
+        ensure!(
+            engine_cvar.string_is_non_null(),
+            "the CVar string pointer was null"
+        );
 
         let string = unsafe { CStr::from_ptr(engine_cvar.string) }
             .to_str()
@@ -103,12 +110,15 @@ impl CVar {
 
     /// Tries parsing this variable's value to the desired type.
     pub fn parse<T>(&self, engine: &mut Engine) -> Result<T>
-        where T: FromStr,
-              <T as FromStr>::Err: ::std::error::Error + Send + 'static
+    where
+        T: FromStr,
+        <T as FromStr>::Err: ::std::error::Error + Send + 'static,
     {
-        let string = self.to_string(engine)
-                         .chain_err(|| "could not get this CVar's string value")?;
-        string.parse()
-              .chain_err(|| "could not convert the CVar string to the desired type")
+        let string = self.to_string(engine).chain_err(
+            || "could not get this CVar's string value",
+        )?;
+        string.parse().chain_err(
+            || "could not convert the CVar string to the desired type",
+        )
     }
 }
