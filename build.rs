@@ -2,6 +2,7 @@ extern crate syn;
 extern crate walkdir;
 
 use std::env;
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -13,9 +14,11 @@ fn main() {
     let mut data = Data::new();
 
     for entry in walkdir::WalkDir::new("src")
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| !e.file_type().is_dir()) {
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| !e.file_type().is_dir())
+        .filter(|e| e.path().extension() == Some(OsStr::new(".rs")))
+    {
         let mut path = String::new();
 
         for name in entry.path().with_extension("").iter().skip(1) {
@@ -24,10 +27,14 @@ fn main() {
 
         let entry_data = get_data(entry.path());
 
-        data.commands.extend(entry_data.commands.into_iter()
-                                 .map(|c| format!("{}::{}", &path, c)));
-        data.cvars.extend(entry_data.cvars.into_iter()
-                              .map(|c| format!("{}::{}", &path, c)));
+        data.commands.extend(
+            entry_data.commands.into_iter().map(|c| {
+                format!("{}::{}", &path, c)
+            }),
+        );
+        data.cvars.extend(entry_data.cvars.into_iter().map(
+            |c| format!("{}::{}", &path, c),
+        ));
     }
 
     let command_array = make_command_array(data.commands);
@@ -73,7 +80,10 @@ fn get_data(path: &Path) -> Data {
         let mut visitor = MyVisitor::new();
         visitor.visit_crate(&_crate);
 
-        Data { commands: visitor.commands, cvars: visitor.cvars }
+        Data {
+            commands: visitor.commands,
+            cvars: visitor.cvars,
+        }
     } else {
         Data::new()
     }
@@ -98,8 +108,10 @@ fn make_command_array(commands: Vec<String>) -> String {
 }
 
 fn make_cvar_array(cvars: Vec<String>) -> String {
-    let mut buf = format!("pub static CVARS: [&::engine::CVarGuard; {}] = [",
-                          cvars.len());
+    let mut buf = format!(
+        "pub static CVARS: [&::engine::CVarGuard; {}] = [",
+        cvars.len()
+    );
 
     let mut iter = cvars.into_iter();
 
@@ -123,7 +135,10 @@ struct MyVisitor {
 
 impl MyVisitor {
     fn new() -> Self {
-        Self { commands: Vec::new(), cvars: Vec::new() }
+        Self {
+            commands: Vec::new(),
+            cvars: Vec::new(),
+        }
     }
 }
 
