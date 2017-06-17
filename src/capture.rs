@@ -2,6 +2,7 @@ use error_chain::ChainedError;
 use ffmpeg::{Rational, format};
 use ffmpeg::frame::Video as VideoFrame;
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::ptr;
 use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
@@ -53,6 +54,11 @@ pub struct VideoBuffer {
 
 pub struct AudioBuffer {
     data: Vec<(i16, i16)>,
+}
+
+struct SendOnDrop<'a, T: 'a> {
+    buffer: Option<T>,
+    channel: &'a Sender<T>,
 }
 
 impl VideoBuffer {
@@ -122,6 +128,29 @@ impl AudioBuffer {
     }
 }
 
+impl<'a, T> SendOnDrop<'a, T> {
+    fn new(buffer: T, channel: &'a Sender<T>) -> Self {
+        Self {
+            buffer: Some(buffer),
+            channel,
+        }
+    }
+}
+
+impl<'a, T> Drop for SendOnDrop<'a, T> {
+    fn drop(&mut self) {
+        self.channel.send(self.buffer.take().unwrap()).unwrap();
+    }
+}
+
+impl<'a, T> Deref for SendOnDrop<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.buffer.as_ref().unwrap()
+    }
+}
+
 fn capture_thread(
     video_buf_sender: &Sender<VideoBuffer>,
     audio_buf_sender: &Sender<AudioBuffer>,
@@ -166,8 +195,9 @@ fn capture_thread(
             }
 
             CaptureThreadEvent::VideoFrame((buffer, frametime)) => {
+                let buffer = SendOnDrop::new(buffer, &video_buf_sender);
+
                 if drop_frames {
-                    video_buf_sender.send(buffer).unwrap();
                     continue;
                 }
 
@@ -175,7 +205,6 @@ fn capture_thread(
                     &mut encoder,
                     buffer,
                     frametime,
-                    &video_buf_sender,
                     parameters.as_ref().unwrap(),
                     &mut frame,
                 )
@@ -188,14 +217,15 @@ fn capture_thread(
             }
 
             CaptureThreadEvent::AudioFrame(buffer) => {
+                let buffer = SendOnDrop::new(buffer, &audio_buf_sender);
+
                 if drop_frames {
-                    audio_buf_sender.send(buffer).unwrap();
                     continue;
                 }
 
                 let result = encoder.as_mut().unwrap().take_audio(buffer.data());
 
-                audio_buf_sender.send(buffer).unwrap();
+                drop(audio_buf_sender);
 
                 if let Err(e) = result {
                     *CAPTURING.write().unwrap() = false;
@@ -210,20 +240,16 @@ fn capture_thread(
 
 fn encode(
     encoder: &mut Option<Encoder>,
-    buf: VideoBuffer,
+    buf: SendOnDrop<VideoBuffer>,
     frametime: f64,
-    video_buf_sender: &Sender<VideoBuffer>,
     parameters: &EncoderParameters,
     frame: &mut VideoFrame,
 ) -> Result<()> {
+    // Copy pixels into our video frame.
     buf.copy_to_frame(frame);
 
     // We're done with buf, now it can receive the next pack of pixels.
-    // IMPORTANT: if there is any error handling in this function before this line, make sure to
-    // handle sending the buffer back in the error handling appropriately, as otherwise the game
-    // will freeze.
-    // TODO: restructure the code to get rid of the above condition.
-    video_buf_sender.send(buf).unwrap();
+    drop(buf);
 
     // If the encoder wasn't initialized, initialize it.
     if encoder.is_none() {
