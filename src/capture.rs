@@ -19,8 +19,6 @@ lazy_static! {
     // TODO: this is bad, refactor this.
     static ref TIME_BASE: RwLock<Option<Rational>> = RwLock::new(None);
 
-    static ref ENCODER: Mutex<Option<Encoder>> = Mutex::new(None);
-
     /// Receives buffers to write pixels to.
     static ref VIDEO_BUF_RECEIVER: Mutex<Option<Receiver<VideoBuffer>>> = Mutex::new(None);
 
@@ -144,37 +142,19 @@ fn capture_thread(
     // Encoding parameters, set on CaptureStart.
     let mut parameters = None;
 
+    // The encoder itself.
+    let mut encoder: Option<Encoder> = None;
+
     // Event loop for the capture thread.
     loop {
-        // CAPTURE_THREAD_PROFILER.with(|p| if let Some(p) = p.borrow_mut().as_mut() {
-        //     p.start_section("event_receiver.recv()");
-        // });
-
         match event_receiver.recv().unwrap() {
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
                 parameters = Some(params);
-
-                // CAPTURE_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
             }
 
             CaptureThreadEvent::CaptureStop => {
-                // CAPTURE_THREAD_PROFILER.with(|p| {
-                //     let mut p = p.borrow_mut().take().unwrap();
-                //     p.stop(true).unwrap();
-                //
-                //     if let Ok(data) = p.get_data() {
-                //         let mut buf = format!("Received {} frames, spent {:.3} msec per frame:\n", data.lap_count, data.average_lap_time);
-                //
-                //         for &(section, time) in &data.average_section_times {
-                //             buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
-                //         }
-                //
-                //         message_sender.send(buf).unwrap();
-                //     }
-                // });
-
-                if let Some(mut encoder) = (*ENCODER.lock().unwrap()).take() {
+                if let Some(mut encoder) = encoder.take() {
                     if let Err(e) = encoder.finish() {
                         message_sender.send(format!("{}", e.display())).unwrap();
                     }
@@ -192,6 +172,7 @@ fn capture_thread(
                 }
 
                 if let Err(e) = encode(
+                    &mut encoder,
                     buffer,
                     frametime,
                     &video_buf_sender,
@@ -201,7 +182,6 @@ fn capture_thread(
                 {
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
-                    // CAPTURE_THREAD_PROFILER.with(|p| *p.borrow_mut() = None);
 
                     message_sender.send(format!("{}", e.display())).unwrap();
                 }
@@ -213,7 +193,6 @@ fn capture_thread(
                     continue;
                 }
 
-                let mut encoder = ENCODER.lock().unwrap();
                 let result = encoder.as_mut().unwrap().take_audio(buffer.data());
 
                 audio_buf_sender.send(buffer).unwrap();
@@ -221,7 +200,6 @@ fn capture_thread(
                 if let Err(e) = result {
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
-                    // CAPTURE_THREAD_PROFILER.with(|p| *p.borrow_mut() = None);
 
                     message_sender.send(format!("{}", e.display())).unwrap();
                 }
@@ -230,21 +208,16 @@ fn capture_thread(
     }
 }
 
-fn start_encoder(parameters: &EncoderParameters, (width, height): (u32, u32)) -> Result<Encoder> {
-    Encoder::start(&parameters, (width, height))
-}
-
 fn encode(
+    encoder: &mut Option<Encoder>,
     buf: VideoBuffer,
     frametime: f64,
     video_buf_sender: &Sender<VideoBuffer>,
     parameters: &EncoderParameters,
     frame: &mut VideoFrame,
 ) -> Result<()> {
-    // CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("buf.copy_to_frame()"));
     buf.copy_to_frame(frame);
 
-    // CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("video_buf_sender.send()")); {
     // We're done with buf, now it can receive the next pack of pixels.
     // IMPORTANT: if there is any error handling in this function before this line, make sure to
     // handle sending the buffer back in the error handling appropriately, as otherwise the game
@@ -252,25 +225,21 @@ fn encode(
     // TODO: restructure the code to get rid of the above condition.
     video_buf_sender.send(buf).unwrap();
 
-    // CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("locking and starting the encoder"));
-    // Let's encode the frame we just received.
-    let mut encoder = ENCODER.lock().unwrap();
-
-    // If the encoder wasn't initialized or if the frame size changed, initialize it.
-    if encoder.as_ref().map_or(true, |enc| {
-        enc.width() != frame.width() || enc.height() != frame.height()
-    })
-    {
-        *encoder = Some(start_encoder(&parameters, (frame.width(), frame.height()))
+    // If the encoder wasn't initialized, initialize it.
+    if encoder.is_none() {
+        *encoder = Some(Encoder::start(parameters, (frame.width(), frame.height()))
             .chain_err(|| "could not start the encoder")?);
     }
 
+    let mut encoder = encoder.as_mut().unwrap();
+
+    ensure!((frame.width(), frame.height()) == (encoder.width(), encoder.height()),
+        "resolution changes are not supported");
+
     // Encode the frame.
-    encoder.as_mut().unwrap().take(frame, frametime).chain_err(
+    encoder.take(frame, frametime).chain_err(
         || "could not encode the frame",
     )?;
-
-    // CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().stop(false)).unwrap();
 
     Ok(())
 }
