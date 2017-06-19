@@ -57,10 +57,8 @@ impl Engine {
     pub fn register_variable(&mut self, cvar: &CVar) -> Result<()> {
         let mut engine_cvar = self.get_engine_cvar(cvar);
 
-        ensure!(
-            engine_cvar.string_is_non_null(),
-            "attempted to register a variable with null string"
-        );
+        ensure!(engine_cvar.string_is_non_null(),
+                "attempted to register a variable with null string");
 
         unsafe {
             hw::register_variable(&mut engine_cvar);

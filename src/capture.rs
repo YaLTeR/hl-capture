@@ -72,13 +72,11 @@ impl VideoBuffer {
 
     pub fn set_resolution(&mut self, width: u32, height: u32) {
         if self.width != width || self.height != height {
-            println!(
-                "Changing resolution from {}×{} to {}×{}.",
-                self.width,
-                self.height,
-                width,
-                height
-            );
+            println!("Changing resolution from {}×{} to {}×{}.",
+                     self.width,
+                     self.height,
+                     width,
+                     height);
 
             self.data.resize((width * height * 4) as usize, 0);
             self.width = width;
@@ -102,13 +100,10 @@ impl VideoBuffer {
 
         for y in 0..self.height {
             unsafe {
-                ptr::copy_nonoverlapping(
-                    self.data.as_ptr().offset((y * self.width * 4) as isize),
-                    data.as_mut_ptr().offset(
-                        ((self.height - y - 1) * stride) as isize,
-                    ),
-                    (self.width * 4) as usize,
-                );
+                ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * 4) as isize),
+                                         data.as_mut_ptr()
+                                             .offset(((self.height - y - 1) * stride) as isize),
+                                         (self.width * 4) as usize);
             }
         }
     }
@@ -151,12 +146,10 @@ impl<'a, T> Deref for SendOnDrop<'a, T> {
     }
 }
 
-fn capture_thread(
-    video_buf_sender: &Sender<VideoBuffer>,
-    audio_buf_sender: &Sender<AudioBuffer>,
-    message_sender: &Sender<String>,
-    event_receiver: &Receiver<CaptureThreadEvent>,
-) {
+fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
+                  audio_buf_sender: &Sender<AudioBuffer>,
+                  message_sender: &Sender<String>,
+                  event_receiver: &Receiver<CaptureThreadEvent>) {
     // Send the buffers to the game thread right away.
     video_buf_sender.send(VideoBuffer::new()).unwrap();
     audio_buf_sender.send(AudioBuffer::new()).unwrap();
@@ -201,13 +194,11 @@ fn capture_thread(
                     continue;
                 }
 
-                if let Err(e) = encode(
-                    &mut encoder,
-                    buffer,
-                    frametime,
-                    parameters.as_ref().unwrap(),
-                    &mut frame,
-                )
+                if let Err(e) = encode(&mut encoder,
+                                       buffer,
+                                       frametime,
+                                       parameters.as_ref().unwrap(),
+                                       &mut frame)
                 {
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
@@ -238,13 +229,12 @@ fn capture_thread(
     }
 }
 
-fn encode(
-    encoder: &mut Option<Encoder>,
-    buf: SendOnDrop<VideoBuffer>,
-    frametime: f64,
-    parameters: &EncoderParameters,
-    frame: &mut VideoFrame,
-) -> Result<()> {
+fn encode(encoder: &mut Option<Encoder>,
+          buf: SendOnDrop<VideoBuffer>,
+          frametime: f64,
+          parameters: &EncoderParameters,
+          frame: &mut VideoFrame)
+          -> Result<()> {
     // Copy pixels into our video frame.
     buf.copy_to_frame(frame);
 
@@ -254,18 +244,18 @@ fn encode(
     // If the encoder wasn't initialized, initialize it.
     if encoder.is_none() {
         *encoder = Some(Encoder::start(parameters, (frame.width(), frame.height()))
-            .chain_err(|| "could not start the encoder")?);
+                            .chain_err(|| "could not start the encoder")?);
     }
 
     let mut encoder = encoder.as_mut().unwrap();
 
     ensure!((frame.width(), frame.height()) == (encoder.width(), encoder.height()),
-        "resolution changes are not supported");
+            "resolution changes are not supported");
 
     // Encode the frame.
-    encoder.take(frame, frametime).chain_err(
-        || "could not encode the frame",
-    )?;
+    // TODO: correct argument.
+    encoder.take(frame, 1)
+           .chain_err(|| "could not encode the frame")?;
 
     Ok(())
 }
@@ -361,11 +351,9 @@ pub fn stop(engine: &Engine) {
 
     GAME_THREAD_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
         if let Ok(data) = p.get_data() {
-            let mut buf = format!(
-                "Captured {} frames. Game thread overhead: {:.3} msec:\n",
-                data.lap_count,
-                data.average_lap_time
-            );
+            let mut buf = format!("Captured {} frames. Game thread overhead: {:.3} msec:\n",
+                                  data.lap_count,
+                                  data.average_lap_time);
 
             for &(section, time) in &data.average_section_times {
                 buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
@@ -375,16 +363,17 @@ pub fn stop(engine: &Engine) {
         }
     });
     AUDIO_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
-        if let Ok(data) = p.get_data() {
-            let mut buf = format!("Audio overhead: {:.3} msec:\n", data.average_lap_time);
+                            if let Ok(data) = p.get_data() {
+                                let mut buf = format!("Audio overhead: {:.3} msec:\n",
+                                                      data.average_lap_time);
 
-            for &(section, time) in &data.average_section_times {
-                buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
-            }
+                                for &(section, time) in &data.average_section_times {
+                                    buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
+                                }
 
-            engine.con_print(&buf);
-        }
-    });
+                                engine.con_print(&buf);
+                            }
+                        });
 }
 
 /// Parses the given string and returns a time base.
@@ -422,9 +411,8 @@ command!(cap_start, |mut engine| {
         vpx_threads: String::new(),
     };
 
-    match cap_filename.to_string(&mut engine).chain_err(
-        || "invalid cap_filename",
-    ) {
+    match cap_filename.to_string(&mut engine)
+                        .chain_err(|| "invalid cap_filename") {
         Ok(filename) => parameters.filename = filename,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -432,9 +420,9 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    if let Some(time_base) = cap_fps.to_string(&mut engine).ok().and_then(
-        |s| parse_fps(&s),
-    )
+    if let Some(time_base) = cap_fps.to_string(&mut engine)
+                                    .ok()
+                                    .and_then(|s| parse_fps(&s))
     {
         parameters.time_base = time_base;
     } else {
@@ -450,9 +438,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_video_bitrate.parse(&mut engine).chain_err(
-        || "invalid cap_video_bitrate",
-    ) {
+    match cap_video_bitrate.parse(&mut engine)
+                             .chain_err(|| "invalid cap_video_bitrate") {
         Ok(video_bitrate) => parameters.video_bitrate = video_bitrate,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -460,9 +447,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_audio_bitrate.parse(&mut engine).chain_err(
-        || "invalid cap_audio_bitrate",
-    ) {
+    match cap_audio_bitrate.parse(&mut engine)
+                             .chain_err(|| "invalid cap_audio_bitrate") {
         Ok(audio_bitrate) => parameters.audio_bitrate = audio_bitrate,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -470,9 +456,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_muxer_settings.parse(&mut engine).chain_err(
-        || "invalid cap_muxer_settings",
-    ) {
+    match cap_muxer_settings.parse(&mut engine)
+                              .chain_err(|| "invalid cap_muxer_settings") {
         Ok(muxer_settings) => parameters.muxer_settings = muxer_settings,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -480,9 +465,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_x264_preset.parse(&mut engine).chain_err(
-        || "invalid cap_x264_preset",
-    ) {
+    match cap_x264_preset.parse(&mut engine)
+                           .chain_err(|| "invalid cap_x264_preset") {
         Ok(preset) => parameters.preset = preset,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -490,9 +474,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_video_encoder_settings.parse(&mut engine).chain_err(
-        || "invalid cap_video_encoder_settings",
-    ) {
+    match cap_video_encoder_settings.parse(&mut engine)
+                                      .chain_err(|| "invalid cap_video_encoder_settings") {
         Ok(video_encoder_settings) => parameters.video_encoder_settings = video_encoder_settings,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -500,9 +483,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_vpx_cpu_usage.parse(&mut engine).chain_err(
-        || "invalid cap_vpx_cpu_usage",
-    ) {
+    match cap_vpx_cpu_usage.parse(&mut engine)
+                             .chain_err(|| "invalid cap_vpx_cpu_usage") {
         Ok(cpu_usage) => parameters.vpx_cpu_usage = cpu_usage,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -510,9 +492,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    match cap_vpx_threads.parse(&mut engine).chain_err(
-        || "invalid cap_vpx_threads",
-    ) {
+    match cap_vpx_threads.parse(&mut engine)
+                           .chain_err(|| "invalid cap_vpx_threads") {
         Ok(threads) => parameters.vpx_threads = threads,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));

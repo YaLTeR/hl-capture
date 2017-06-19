@@ -27,14 +27,12 @@ fn main() {
 
         let entry_data = get_data(entry.path());
 
-        data.commands.extend(
-            entry_data.commands.into_iter().map(|c| {
-                format!("{}::{}", &path, c)
-            }),
-        );
-        data.cvars.extend(entry_data.cvars.into_iter().map(
-            |c| format!("{}::{}", &path, c),
-        ));
+        data.commands.extend(entry_data.commands
+                                       .into_iter()
+                                       .map(|c| format!("{}::{}", &path, c)));
+        data.cvars.extend(entry_data.cvars
+                                    .into_iter()
+                                    .map(|c| format!("{}::{}", &path, c)));
     }
 
     let command_array = make_command_array(data.commands);

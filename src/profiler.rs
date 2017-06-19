@@ -55,15 +55,13 @@ impl Profiler {
     ///
     /// If `cancel` is set to `true`, the measurement is discarded.
     fn stop_current_section(&mut self, cancel: bool) -> Result<()> {
-        ensure!(
-            self.current_section.is_some(),
-            "no stopwatches are currently running"
-        );
+        ensure!(self.current_section.is_some(),
+                "no stopwatches are currently running");
 
         let &mut (_, ref mut stopwatch) =
-            self.watches.get_mut(self.current_section.unwrap()).expect(
-                "current_section was set to an invalid value",
-            );
+            self.watches
+                .get_mut(self.current_section.unwrap())
+                .expect("current_section was set to an invalid value");
 
         if !cancel {
             stopwatch.lap();
@@ -120,13 +118,15 @@ impl Profiler {
         sections.sort_by_key(|&(_, &(pos, _))| pos);
 
         Ok(ProfilingData {
-            lap_count,
-            average_lap_time: (self.main_watch.total_time() / denom) as f64 / 1000f64,
-            average_section_times: sections.iter()
-                                           .map(|&(&section, &(_, ref watch))| {
-                (section, (watch.total_time() / denom) as f64 / 1000f64)
-            })
-                                           .collect(),
-        })
+               lap_count,
+               average_lap_time: (self.main_watch.total_time() / denom) as f64 / 1000f64,
+               average_section_times: sections.iter()
+                                              .map(|&(&section, &(_, ref watch))| {
+                                                       (section,
+                                                        (watch.total_time() / denom) as f64 /
+                                                            1000f64)
+                                                   })
+                                              .collect(),
+           })
     }
 }

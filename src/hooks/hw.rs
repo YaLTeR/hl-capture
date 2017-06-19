@@ -152,14 +152,13 @@ struct dma_t {
 /// Note: `_restart` also causes this function to exit, in this case the launcher
 /// unloads and reloads hw.so and this function is called again as if it was a fresh start.
 #[export_name = "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"]
-pub unsafe extern "C" fn RunListenServer(
-    instance: *mut c_void,
-    basedir: *mut c_char,
-    cmdline: *mut c_char,
-    postRestartCmdLineArgs: *mut c_char,
-    launcherFactory: *mut c_void,
-    filesystemFactory: *mut c_void,
-) -> c_int {
+pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
+                                         basedir: *mut c_char,
+                                         cmdline: *mut c_char,
+                                         postRestartCmdLineArgs: *mut c_char,
+                                         launcherFactory: *mut c_void,
+                                         filesystemFactory: *mut c_void)
+                                         -> c_int {
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
     if let Err(ref e) = refresh_pointers().chain_err(|| "error refreshing pointers") {
@@ -172,14 +171,12 @@ pub unsafe extern "C" fn RunListenServer(
     // Initialize the capturing.
     capture::initialize();
 
-    let rv = real!(RunListenServer)(
-        instance,
-        basedir,
-        cmdline,
-        postRestartCmdLineArgs,
-        launcherFactory,
-        filesystemFactory,
-    );
+    let rv = real!(RunListenServer)(instance,
+                                    basedir,
+                                    cmdline,
+                                    postRestartCmdLineArgs,
+                                    launcherFactory,
+                                    filesystemFactory);
 
     // Since hw.so is getting unloaded, reset all pointers.
     reset_pointers();
@@ -299,10 +296,10 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
         SOUND_REMAINDER = samples - samples_rounded;
 
         AUDIO_BUFFER.with(|b| {
-            let mut buf = capture::get_audio_buffer();
-            buf.data_mut().clear();
-            *b.borrow_mut() = Some(buf);
-        });
+                              let mut buf = capture::get_audio_buffer();
+                              buf.data_mut().clear();
+                              *b.borrow_mut() = Some(buf);
+                          });
 
         real!(S_PaintChannels)(paintedtime + samples_rounded as i32);
 
@@ -328,12 +325,11 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
 
             for i in 0..(end - paintedtime) as usize * 2 {
                 // Clamping as done in Snd_WriteLinearBlastStereo16().
-                let l16 =
-                    cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
-                let r16 = cmp::min(
-                    32767,
-                    cmp::max(-32768, (paintbuffer[i].right * volume) >> 8),
-                ) as i16;
+                let l16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as
+                    i16;
+                let r16 = cmp::min(32767,
+                                   cmp::max(-32768, (paintbuffer[i].right * volume) >> 8)) as
+                    i16;
 
                 buf.push((l16, r16));
             }
@@ -356,65 +352,68 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
     if capture::is_capturing() {
         capture::GAME_THREAD_PROFILER.with(|p| {
-            p.borrow_mut().as_mut().unwrap().start_section(
-                "get_resolution()",
-            )
-        });
+                                               p.borrow_mut()
+                                                .as_mut()
+                                                .unwrap()
+                                                .start_section("get_resolution()")
+                                           });
         let (w, h) = get_resolution();
 
         capture::GAME_THREAD_PROFILER.with(|p| {
-            p.borrow_mut().as_mut().unwrap().start_section(
-                "get_buffer()",
-            )
-        });
+                                               p.borrow_mut()
+                                                .as_mut()
+                                                .unwrap()
+                                                .start_section("get_buffer()")
+                                           });
         let mut buf = capture::get_buffer((w, h));
 
         let texture = (*ptr!(s_BackBufferFBO)).Tex;
         if texture != 0 {
             capture::GAME_THREAD_PROFILER.with(|p| {
-                p.borrow_mut().as_mut().unwrap().start_section(
-                    "gl::Finish()",
-                )
-            });
+                                                   p.borrow_mut()
+                                                    .as_mut()
+                                                    .unwrap()
+                                                    .start_section("gl::Finish()")
+                                               });
             gl::Finish();
 
             PROQUE.with(|pro_que| {
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "ImageDescriptor::new()",
-                    )
-                });
-                let descr = ocl::builders::ImageDescriptor::new(
-                    ocl::enums::MemObjectType::Image2d,
-                    w as usize,
-                    h as usize,
-                    1,
-                    1,
-                    0,
-                    0,
-                    None,
-                );
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("ImageDescriptor::new()")
+                                                   });
+                let descr = ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
+                                                                w as usize,
+                                                                h as usize,
+                                                                1,
+                                                                1,
+                                                                0,
+                                                                0,
+                                                                None);
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "Image::from_gl_texture()",
-                    )
-                });
-                let image = ocl::Image::<u8>::from_gl_texture(
-                    pro_que.queue(),
-                    ocl::flags::MEM_READ_ONLY,
-                    descr,
-                    ocl::core::GlTextureTarget::GlTexture2d,
-                    0,
-                    texture,
-                )
-                            .expect("ocl::Image::from_gl_texture()");
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("Image::from_gl_texture()")
+                                                   });
+                let image =
+                    ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
+                                                      ocl::flags::MEM_READ_ONLY,
+                                                      descr,
+                                                      ocl::core::GlTextureTarget::GlTexture2d,
+                                                      0,
+                                                      texture)
+                    .expect("ocl::Image::from_gl_texture()");
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "Building dst_image",
-                    )
-                });
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("Building dst_image")
+                                                   });
                 let dst_image = ocl::Image::<u8>::builder()
                     .channel_order(ocl::enums::ImageChannelOrder::Rgba)
                     .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
@@ -426,17 +425,19 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                     .expect("Image build");
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "gl_acquire()",
-                    )
-                });
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("gl_acquire()")
+                                                   });
                 image.cmd().gl_acquire().enq().expect("gl_acquire()");
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "Creating kernel",
-                    )
-                });
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("Creating kernel")
+                                                   });
                 let kernel = pro_que.create_kernel("increase_blue")
                                     .unwrap()
                                     .gws((w, h))
@@ -444,69 +445,76 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                                     .arg_img(&dst_image);
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "kernel.enq()",
-                    )
-                });
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("kernel.enq()")
+                                                   });
                 kernel.enq().expect("kernel.enq()");
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "pro_que.finish()",
-                    )
-                });
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("pro_que.finish()")
+                                                   });
                 pro_que.finish().expect("pro_que.finish()");
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "dst_image.read()",
-                    )
-                });
-                dst_image.read(buf.as_mut_slice()).enq().expect(
-                    "dst_image.read()",
-                );
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("dst_image.read()")
+                                                   });
+                dst_image.read(buf.as_mut_slice())
+                         .enq()
+                         .expect("dst_image.read()");
 
                 capture::GAME_THREAD_PROFILER.with(|p| {
-                    p.borrow_mut().as_mut().unwrap().start_section(
-                        "gl_release()",
-                    )
-                });
+                                                       p.borrow_mut()
+                                                        .as_mut()
+                                                        .unwrap()
+                                                        .start_section("gl_release()")
+                                                   });
                 image.cmd().gl_release().enq().expect("gl_release()");
             });
         } else {
             capture::GAME_THREAD_PROFILER.with(|p| {
-                p.borrow_mut().as_mut().unwrap().start_section(
-                    "gl::PixelStorei()",
-                )
-            });
+                                                   p.borrow_mut()
+                                                    .as_mut()
+                                                    .unwrap()
+                                                    .start_section("gl::PixelStorei()")
+                                               });
             // Our buffer expects 1-byte alignment.
             gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
 
             capture::GAME_THREAD_PROFILER.with(|p| {
-                p.borrow_mut().as_mut().unwrap().start_section(
-                    "gl::ReadPixels()",
-                )
-            });
+                                                   p.borrow_mut()
+                                                    .as_mut()
+                                                    .unwrap()
+                                                    .start_section("gl::ReadPixels()")
+                                               });
             // Get the pixels!
-            gl::ReadPixels(
-                0,
-                0,
-                w as GLsizei,
-                h as GLsizei,
-                gl::RGB,
-                gl::UNSIGNED_BYTE,
-                buf.as_mut_slice().as_mut_ptr() as _,
-            );
+            gl::ReadPixels(0,
+                           0,
+                           w as GLsizei,
+                           h as GLsizei,
+                           gl::RGB,
+                           gl::UNSIGNED_BYTE,
+                           buf.as_mut_slice().as_mut_ptr() as _);
         }
 
         capture::GAME_THREAD_PROFILER.with(|p| {
-            p.borrow_mut().as_mut().unwrap().start_section("capture()")
-        });
+                                               p.borrow_mut()
+                                                .as_mut()
+                                                .unwrap()
+                                                .start_section("capture()")
+                                           });
         capture::capture(buf, *ptr!(host_frametime));
 
-        capture::GAME_THREAD_PROFILER.with(
-            |p| p.borrow_mut().as_mut().unwrap().stop(false).unwrap(),
-        );
+        capture::GAME_THREAD_PROFILER.with(|p| {
+                                               p.borrow_mut().as_mut().unwrap().stop(false).unwrap()
+                                           });
 
         CAPTURE_SOUND = true;
     }
@@ -521,43 +529,40 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
 unsafe fn refresh_pointers() -> Result<()> {
-    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).chain_err(
-        || "couldn't load hw.so",
-    )?;
+    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
+        .chain_err(|| "couldn't load hw.so")?;
 
     FUNCTIONS = Some(Functions {
-        RunListenServer: find!(
-            hw,
-            "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"
-        ),
-        CL_Disconnect: find!(hw, "CL_Disconnect"),
-        Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
-        Cmd_Argc: find!(hw, "Cmd_Argc"),
-        Cmd_Argv: find!(hw, "Cmd_Argv"),
-        Con_Printf: find!(hw, "Con_Printf"),
-        Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
-        Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
-        GL_EndRendering: find!(hw, "GL_EndRendering"),
-        Host_FilterTime: find!(hw, "Host_FilterTime"),
-        Key_Event: find!(hw, "Key_Event"),
-        Memory_Init: find!(hw, "Memory_Init"),
-        S_PaintChannels: find!(hw, "S_PaintChannels"),
-        S_TransferStereo16: find!(hw, "S_TransferStereo16"),
-        Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
-        VideoMode_GetCurrentVideoMode: find!(hw, "VideoMode_GetCurrentVideoMode"),
-        VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"),
-    });
+                         RunListenServer: find!(hw,
+                                                "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"),
+                         CL_Disconnect: find!(hw, "CL_Disconnect"),
+                         Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
+                         Cmd_Argc: find!(hw, "Cmd_Argc"),
+                         Cmd_Argv: find!(hw, "Cmd_Argv"),
+                         Con_Printf: find!(hw, "Con_Printf"),
+                         Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
+                         Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
+                         GL_EndRendering: find!(hw, "GL_EndRendering"),
+                         Host_FilterTime: find!(hw, "Host_FilterTime"),
+                         Key_Event: find!(hw, "Key_Event"),
+                         Memory_Init: find!(hw, "Memory_Init"),
+                         S_PaintChannels: find!(hw, "S_PaintChannels"),
+                         S_TransferStereo16: find!(hw, "S_TransferStereo16"),
+                         Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
+                         VideoMode_GetCurrentVideoMode: find!(hw, "VideoMode_GetCurrentVideoMode"),
+                         VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"),
+                     });
 
     POINTERS = Some(Pointers {
-        cls: find!(hw, "cls"),
-        host_frametime: find!(hw, "host_frametime"),
-        paintbuffer: find!(hw, "paintbuffer"),
-        paintedtime: find!(hw, "paintedtime"),
-        realtime: find!(hw, "realtime"),
-        s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
-        shm: find!(hw, "shm"),
-        window_rect: find!(hw, "window_rect"),
-    });
+                        cls: find!(hw, "cls"),
+                        host_frametime: find!(hw, "host_frametime"),
+                        paintbuffer: find!(hw, "paintbuffer"),
+                        paintedtime: find!(hw, "paintedtime"),
+                        realtime: find!(hw, "realtime"),
+                        s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
+                        shm: find!(hw, "shm"),
+                        window_rect: find!(hw, "window_rect"),
+                    });
 
     Ok(())
 }
@@ -582,9 +587,9 @@ unsafe fn register_cvars_and_commands() {
 
     let mut engine = Engine::new();
     for cvar in &cvar::CVARS {
-        if let Err(ref e) = cvar.register(&mut engine).chain_err(
-            || "error registering a console variable",
-        )
+        if let Err(ref e) =
+            cvar.register(&mut engine)
+                .chain_err(|| "error registering a console variable")
         {
             panic!("{}", e.display());
         }
@@ -614,11 +619,9 @@ pub unsafe fn register_variable(cvar: &mut cvar::cvar_t) {
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
 pub unsafe fn con_print(string: &str) {
-    real!(Con_Printf)(
-        CString::new(string.replace('%', "%%"))
-            .expect("string cannot contain null bytes")
-            .as_ptr(),
-    )
+    real!(Con_Printf)(CString::new(string.replace('%', "%%"))
+                          .expect("string cannot contain null bytes")
+                          .as_ptr())
 }
 
 /// Gets the console command argument count.

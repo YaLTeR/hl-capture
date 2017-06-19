@@ -35,10 +35,7 @@ impl<'a> Iterator for Args<'a> {
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (
-            (self.count - self.index) as usize,
-            Some((self.count - self.index) as usize),
-        )
+        ((self.count - self.index) as usize, Some((self.count - self.index) as usize))
     }
 }
 

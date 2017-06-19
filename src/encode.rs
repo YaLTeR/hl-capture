@@ -25,14 +25,13 @@ const HL_CHANNEL_LAYOUT: ChannelLayout = channel_layout::STEREO;
 /// Call `Encoder::start()` to start the encoding, then encode some frames with `Encoder::encode()`.
 /// The encoder will flush and save the output file automatically upon being dropped.
 pub struct Encoder {
-    converter: scaling::Context,
+    converter: PixFmtConverter,
     resampler: resampling::Context,
     context: context::Output,
     video_encoder: encoder::Video,
     audio_encoder: encoder::Audio,
     video_stream_index: usize,
     audio_stream_index: usize,
-    video_output_frame: frame::Video,
     audio_output_frame: frame::Audio,
     audio_input_frame: frame::Audio,
     packet: Packet,
@@ -44,10 +43,6 @@ pub struct Encoder {
 
     video_pts: i64,
     audio_pts: i64,
-
-    /// Difference, in video frames, between how much time passed in-game and how much video we
-    /// output.
-    remainder: f64,
 
     /// Current position, in samples, in the audio frame.
     audio_position: usize,
@@ -68,6 +63,18 @@ pub struct EncoderParameters {
     pub vpx_threads: String,
 }
 
+/// Lazily-initialized pixel format converter.
+struct PixFmtConverter {
+    inner: Option<PixFmtConverterInner>,
+    output_format: format::Pixel,
+}
+
+/// Pixel format converter.
+struct PixFmtConverterInner {
+    context: scaling::Context,
+    output_frame: frame::Video,
+}
+
 impl Encoder {
     pub fn start(parameters: &EncoderParameters, (width, height): (u32, u32)) -> Result<Self> {
         let video_codec = VIDEO_ENCODER.lock().unwrap();
@@ -77,21 +84,22 @@ impl Encoder {
         ensure!(audio_codec.is_some(), "audio encoder was not set");
         let audio_codec = audio_codec.unwrap();
 
-        let mut context = format::output(&parameters.filename).chain_err(
-            || "could not create the output context",
-        )?;
-        let global = context.format().flags().contains(
-            format::flag::GLOBAL_HEADER,
-        );
+        let mut context = format::output(&parameters.filename)
+            .chain_err(|| "could not create the output context")?;
+        let global = context.format()
+                            .flags()
+                            .contains(format::flag::GLOBAL_HEADER);
 
         let (video_encoder, video_stream_index) = {
-            let mut stream = context.add_stream(video_codec).chain_err(
-                || "could not add the video stream",
-            )?;
+            let mut stream =
+                context.add_stream(video_codec)
+                       .chain_err(|| "could not add the video stream")?;
 
-            let mut encoder = stream.codec().encoder().video().chain_err(
-                || "could not retrieve the video encoder",
-            )?;
+            let mut encoder =
+                stream.codec()
+                      .encoder()
+                      .video()
+                      .chain_err(|| "could not retrieve the video encoder")?;
 
             if global {
                 encoder.set_flags(codec::flag::GLOBAL_HEADER);
@@ -151,13 +159,15 @@ impl Encoder {
         };
 
         let (audio_encoder, audio_stream_index) = {
-            let mut stream = context.add_stream(audio_codec).chain_err(
-                || "could not add the audio stream",
-            )?;
+            let mut stream =
+                context.add_stream(audio_codec)
+                       .chain_err(|| "could not add the audio stream")?;
 
-            let mut encoder = stream.codec().encoder().audio().chain_err(
-                || "could not retrieve the audio encoder",
-            )?;
+            let mut encoder =
+                stream.codec()
+                      .encoder()
+                      .audio()
+                      .chain_err(|| "could not retrieve the audio encoder")?;
 
             if global {
                 encoder.set_flags(codec::flag::GLOBAL_HEADER);
@@ -229,95 +239,80 @@ impl Encoder {
         })
                                        .collect();
 
-        context.write_header_with(muxer_settings).chain_err(
-            || "could not write the header",
-        )?;
+        context.write_header_with(muxer_settings)
+               .chain_err(|| "could not write the header")?;
 
         let video_stream_time_base = context.stream(video_stream_index).unwrap().time_base();
         let audio_stream_time_base = context.stream(audio_stream_index).unwrap().time_base();
-
-        let converter =
-            software::converter((width, height), format::Pixel::RGBA, video_encoder.format())
-                .chain_err(|| "could not get the color conversion context")?;
-
-        let video_output_frame = frame::Video::new(video_encoder.format(), width, height);
 
         let mut audio_frame_size = audio_encoder.frame_size() as usize;
         if audio_frame_size == 0 {
             audio_frame_size = 1024;
         }
 
-        let mut audio_output_frame = frame::Audio::new(
-            audio_encoder.format(),
-            audio_frame_size,
-            audio_encoder.channel_layout(),
-        );
+        let mut audio_output_frame = frame::Audio::new(audio_encoder.format(),
+                                                       audio_frame_size,
+                                                       audio_encoder.channel_layout());
         audio_output_frame.set_rate(audio_encoder.rate());
 
         let mut audio_input_frame =
             frame::Audio::new(HL_SAMPLE_FORMAT, audio_frame_size, HL_CHANNEL_LAYOUT);
         audio_input_frame.set_rate(HL_SAMPLE_RATE as u32);
 
-        let resampler = software::resampler(
-            (
-                audio_input_frame.format(),
-                audio_input_frame.channel_layout(),
-                audio_input_frame.rate(),
-            ),
-            (
-                audio_output_frame.format(),
-                audio_output_frame.channel_layout(),
-                audio_output_frame.rate(),
-            ),
-        )
+        let resampler = software::resampler((audio_input_frame.format(),
+                                             audio_input_frame.channel_layout(),
+                                             audio_input_frame.rate()),
+                                            (audio_output_frame.format(),
+                                             audio_output_frame.channel_layout(),
+                                             audio_output_frame.rate()))
                         .chain_err(|| "could not get the resampling context")?;
 
 
         let packet = Packet::empty();
 
         Ok(Self {
-            converter,
-            resampler,
-            context,
-            video_encoder,
-            audio_encoder,
-            video_output_frame,
-            audio_output_frame,
-            audio_input_frame,
-            video_stream_index,
-            audio_stream_index,
-            packet,
-            finished: false,
+               converter: PixFmtConverter::new(video_encoder.format()),
+               resampler,
+               context,
+               video_encoder,
+               audio_encoder,
+               audio_output_frame,
+               audio_input_frame,
+               video_stream_index,
+               audio_stream_index,
+               packet,
+               finished: false,
 
-            time_base: parameters.time_base,
-            video_stream_time_base,
-            audio_stream_time_base,
+               time_base: parameters.time_base,
+               video_stream_time_base,
+               audio_stream_time_base,
 
-            video_pts: 0,
-            audio_pts: 0,
+               video_pts: 0,
+               audio_pts: 0,
 
-            remainder: 0f64,
-            audio_position: 0,
-        })
+               audio_position: 0,
+           })
     }
 
-    fn push_frame(&mut self) -> Result<()> {
-        self.video_output_frame.set_pts(Some(self.video_pts));
+    fn push_frame(&mut self, frame: &mut Option<&mut frame::Video>) -> Result<()> {
+        let frame = frame.as_mut()
+                         .map(|x| &mut **x)
+                         .unwrap_or(self.converter.output_frame().unwrap());
+
+        frame.set_pts(Some(self.video_pts));
         self.video_pts += 1;
 
         if self.video_encoder
-               .encode(&self.video_output_frame, &mut self.packet)
+               .encode(&frame, &mut self.packet)
                .chain_err(|| "could not encode the video frame")?
         {
-            self.packet.rescale_ts(
-                self.time_base,
-                self.video_stream_time_base,
-            );
+            self.packet
+                .rescale_ts(self.time_base, self.video_stream_time_base);
             self.packet.set_stream(self.video_stream_index);
 
-            self.packet.write_interleaved(&mut self.context).chain_err(
-                || "could not write the video packet",
-            )?;
+            self.packet
+                .write_interleaved(&mut self.context)
+                .chain_err(|| "could not write the video packet")?;
         }
 
         Ok(())
@@ -331,43 +326,52 @@ impl Encoder {
                .encode(&self.audio_output_frame, &mut self.packet)
                .chain_err(|| "could not encode the audio frame")?
         {
-            self.packet.rescale_ts(
-                (1, self.audio_output_frame.rate() as i32),
-                self.audio_stream_time_base,
-            );
+            self.packet
+                .rescale_ts((1, self.audio_output_frame.rate() as i32),
+                            self.audio_stream_time_base);
             self.packet.set_stream(self.audio_stream_index);
 
-            self.packet.write_interleaved(&mut self.context).chain_err(
-                || "could not write the audio packet",
-            )?;
+            self.packet
+                .write_interleaved(&mut self.context)
+                .chain_err(|| "could not write the audio packet")?;
         }
 
         Ok(())
     }
 
-    pub fn take(&mut self, frame: &frame::Video, frametime: f64) -> Result<()> {
-        // capture::CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("color conversion"));
-        self.converter
-            .run(frame, &mut self.video_output_frame)
-            .chain_err(|| "could not convert the frame to the correct format")?;
+    /// Takes the given frame the specified number of times.
+    pub fn take(&mut self, frame: &mut frame::Video, times: usize) -> Result<()> {
+        if frame.height() != self.height() || frame.width() != self.width() {
+            panic!("the given frame's size doesn't match the encoder frame size");
+        }
 
-        let time_base: f64 = self.time_base.into();
-        self.remainder += frametime / time_base;
+        let mut input = if frame.format() != self.format() {
+            self.converter.convert(frame)?;
+            None
+        } else {
+            Some(frame)
+        };
 
-        // capture::CAPTURE_THREAD_PROFILER.with(|p| p.borrow_mut().as_mut().unwrap().start_section("push_frame()"));
-        loop {
-            // Push this frame as long as it takes up the most of the video frame.
-            // TODO: move this logic somewhere to skip glReadPixels and other stuff
-            // altogether if we're gonna drop this frame anyway.
-            if self.remainder <= 0.5f64 {
-                break;
-            }
-
-            self.push_frame()?;
-            self.remainder -= 1f64;
+        for _ in 0..times {
+            self.push_frame(&mut input)?;
         }
 
         Ok(())
+
+        // let time_base: f64 = self.time_base.into();
+        // self.remainder += frametime / time_base;
+        //
+        // loop {
+        //     // Push this frame as long as it takes up the most of the video frame.
+        //     // TODO: move this logic somewhere to skip glReadPixels and other stuff
+        //     // altogether if we're gonna drop this frame anyway.
+        //     if self.remainder <= 0.5f64 {
+        //         break;
+        //     }
+        //
+        //     self.push_frame()?;
+        //     self.remainder -= 1f64;
+        // }
     }
 
     /// Encodes 16-bit signed interleaved 2-channel stereo sound.
@@ -407,19 +411,17 @@ impl Encoder {
     }
 
     fn flush(&mut self) -> Result<()> {
-        while self.video_encoder.flush(&mut self.packet).chain_err(
-            || "could not get the packet",
-        )?
+        while self.video_encoder
+                  .flush(&mut self.packet)
+                  .chain_err(|| "could not get the packet")?
         {
-            self.packet.rescale_ts(
-                self.time_base,
-                self.video_stream_time_base,
-            );
+            self.packet
+                .rescale_ts(self.time_base, self.video_stream_time_base);
             self.packet.set_stream(self.video_stream_index);
 
-            self.packet.write_interleaved(&mut self.context).chain_err(
-                || "could not write the packet",
-            )?;
+            self.packet
+                .write_interleaved(&mut self.context)
+                .chain_err(|| "could not write the packet")?;
         }
 
         // Fill the remaining audio buffer with silence and encode it.
@@ -444,19 +446,18 @@ impl Encoder {
             self.audio_position = 0;
         }
 
-        while self.audio_encoder.flush(&mut self.packet).chain_err(
-            || "could not get the packet",
-        )?
+        while self.audio_encoder
+                  .flush(&mut self.packet)
+                  .chain_err(|| "could not get the packet")?
         {
-            self.packet.rescale_ts(
-                (1, self.audio_output_frame.rate() as i32),
-                self.audio_stream_time_base,
-            );
+            self.packet
+                .rescale_ts((1, self.audio_output_frame.rate() as i32),
+                            self.audio_stream_time_base);
             self.packet.set_stream(self.audio_stream_index);
 
-            self.packet.write_interleaved(&mut self.context).chain_err(
-                || "could not write the packet",
-            )?;
+            self.packet
+                .write_interleaved(&mut self.context)
+                .chain_err(|| "could not write the packet")?;
         }
 
         Ok(())
@@ -468,9 +469,9 @@ impl Encoder {
         self.finished = true;
 
         self.flush().chain_err(|| "unable to flush the encoder")?;
-        self.context.write_trailer().chain_err(
-            || "could not write the trailer",
-        )?;
+        self.context
+            .write_trailer()
+            .chain_err(|| "could not write the trailer")?;
 
         Ok(())
     }
@@ -482,6 +483,10 @@ impl Encoder {
     pub fn height(&self) -> u32 {
         self.video_encoder.height()
     }
+
+    pub fn format(&self) -> format::Pixel {
+        self.video_encoder.format()
+    }
 }
 
 impl Drop for Encoder {
@@ -489,6 +494,50 @@ impl Drop for Encoder {
         if !self.finished {
             panic!("dropped an Encoder that was not properly closed (see Encoder::finish())");
         }
+    }
+}
+
+impl PixFmtConverter {
+    fn new(output_format: format::Pixel) -> Self {
+        Self {
+            inner: None,
+            output_format,
+        }
+    }
+
+    fn convert(&mut self, frame: &frame::Video) -> Result<&mut frame::Video> {
+        if self.inner.is_none() {
+            self.inner = Some(PixFmtConverterInner::new((frame.width(), frame.height()),
+                                                        frame.format(),
+                                                        self.output_format)?);
+        }
+
+        self.inner.as_mut().unwrap().convert(frame)
+    }
+
+    fn output_frame(&mut self) -> Option<&mut frame::Video> {
+        self.inner.as_mut().map(|x| &mut x.output_frame)
+    }
+}
+
+impl PixFmtConverterInner {
+    fn new((width, height): (u32, u32),
+           input: format::Pixel,
+           output: format::Pixel)
+           -> Result<Self> {
+        Ok(Self {
+               context: software::converter((width, height), input, output)
+                   .chain_err(|| "could not initialize the color conversion context")?,
+               output_frame: frame::Video::new(output, width, height),
+           })
+    }
+
+    fn convert(&mut self, frame: &frame::Video) -> Result<&mut frame::Video> {
+        self.context
+            .run(frame, &mut self.output_frame)
+            .chain_err(|| "could not convert the frame to the correct color format")?;
+
+        Ok(&mut self.output_frame)
     }
 }
 
@@ -501,8 +550,8 @@ pub fn initialize() {
             panic!("{}", e.display());
         }
 
-        *VIDEO_ENCODER.lock().unwrap() =
-            encoder::find_by_name("libx264").and_then(|e| e.video().ok());
+        *VIDEO_ENCODER.lock().unwrap() = encoder::find_by_name("libx264")
+            .and_then(|e| e.video().ok());
         *AUDIO_ENCODER.lock().unwrap() = encoder::find_by_name("aac").and_then(|e| e.audio().ok());
     });
 }
