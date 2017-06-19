@@ -222,6 +222,8 @@ pub unsafe extern "C" fn GL_EndRendering() {
 /// Calculates the frame time and limits the FPS.
 #[no_mangle]
 pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
+    let engine = Engine::new();
+
     let old_realtime = *ptr!(realtime);
 
     let rv = real!(Host_FilterTime)(time);
@@ -229,11 +231,11 @@ pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
     // TODO: this will NOT set the frametime on the first frame of capture / demo playback and WILL
     // set the frametime on the first frame of not capturing. This needs to be fixed somehow.
     if capture::is_capturing() && (*ptr!(cls)).demoplayback != 0 {
-        if let Some(frametime) = capture::get_frametime() {
-            *ptr!(host_frametime) = frametime;
-            *ptr!(realtime) = old_realtime + frametime;
-            return 1;
-        }
+        let frametime = capture::get_capture_parameters(&engine).time_base.into();
+
+        *ptr!(host_frametime) = frametime;
+        *ptr!(realtime) = old_realtime + frametime;
+        return 1;
     }
 
     rv
@@ -281,12 +283,12 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
     }
 
     if CAPTURE_SOUND {
-        let mut engine = Engine::new();
+        let engine = Engine::new();
 
         let paintedtime = *ptr!(paintedtime);
         let frametime = match SOUND_CAPTURE_MODE {
             SoundCaptureMode::Normal => *ptr!(host_frametime),
-            SoundCaptureMode::Remaining => cap_sound_extra.parse(&mut engine).unwrap_or(0f64),
+            SoundCaptureMode::Remaining => capture::get_capture_parameters(&engine).sound_extra,
         };
         let speed = (**ptr!(shm)).speed;
         let samples = frametime * speed as f64 + SOUND_REMAINDER;
@@ -322,8 +324,8 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
             let paintedtime = *ptr!(paintedtime);
             let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
 
-            let mut engine = Engine::new();
-            let volume = (cap_volume.parse(&mut engine).unwrap_or(0.4f32) * 256f32) as i32;
+            let engine = Engine::new();
+            let volume = (capture::get_capture_parameters(&engine).volume * 256f32) as i32;
 
             for i in 0..(end - paintedtime) as usize * 2 {
                 // Clamping as done in Snd_WriteLinearBlastStereo16().
@@ -690,5 +692,3 @@ pub fn capture_remaining_sound(_: &Engine) {
 
 cvar!(cap_allow_tabbing_out_in_demos, "1");
 cvar!(cap_playdemostop, "1");
-cvar!(cap_sound_extra, "0");
-cvar!(cap_volume, "0.4");

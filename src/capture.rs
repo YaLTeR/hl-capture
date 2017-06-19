@@ -17,9 +17,6 @@ use profiler::*;
 lazy_static! {
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
 
-    // TODO: this is bad, refactor this.
-    static ref TIME_BASE: RwLock<Option<Rational>> = RwLock::new(None);
-
     /// Receives buffers to write pixels to.
     static ref VIDEO_BUF_RECEIVER: Mutex<Option<Receiver<VideoBuffer>>> = Mutex::new(None);
 
@@ -37,6 +34,14 @@ thread_local! {
     pub static GAME_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
     pub static AUDIO_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
     // pub static CAPTURE_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
+}
+
+static mut CAPTURE_PARAMETERS: Option<CaptureParameters> = None;
+
+pub struct CaptureParameters {
+    pub sound_extra: f64,
+    pub time_base: Rational,
+    pub volume: f32,
 }
 
 enum CaptureThreadEvent {
@@ -333,8 +338,8 @@ pub fn is_capturing() -> bool {
     *CAPTURING.read().unwrap()
 }
 
-pub fn get_frametime() -> Option<f64> {
-    TIME_BASE.read().unwrap().map(|x| x.into())
+pub fn get_capture_parameters(_: &Engine) -> &CaptureParameters {
+    unsafe { CAPTURE_PARAMETERS.as_ref().unwrap() }
 }
 
 pub fn stop(engine: &Engine) {
@@ -396,37 +401,49 @@ fn parse_fps(string: &str) -> Option<Rational> {
     None
 }
 
-/// Parses the CVar values into `EncoderParameters`.
-fn get_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
-    macro_rules! to_string {
-        ($cvar:expr) => (
-            $cvar.to_string(engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
-        )
-    }
+macro_rules! to_string {
+    ($engine:expr, $cvar:expr) => (
+        $cvar.to_string($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
+    )
+}
 
-    macro_rules! parse {
-        ($cvar:expr) => (
-            $cvar.parse(engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
-        )
-    }
+macro_rules! parse {
+    ($engine:expr, $cvar:expr) => (
+        $cvar.parse($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
+    )
+}
+
+/// Parses the CVar values into `EncoderParameters`.
+fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
 
     Ok(EncoderParameters {
-           audio_bitrate: parse!(cap_audio_bitrate),
-           video_bitrate: parse!(cap_video_bitrate),
-           crf: to_string!(cap_crf),
-           filename: to_string!(cap_filename),
-           muxer_settings: to_string!(cap_muxer_settings),
-           preset: to_string!(cap_x264_preset),
-           time_base: parse_fps(&to_string!(cap_fps)).ok_or("invalid cap_fps")?,
-           audio_encoder_settings: to_string!(cap_audio_encoder_settings),
-           video_encoder_settings: to_string!(cap_video_encoder_settings),
-           vpx_cpu_usage: to_string!(cap_vpx_cpu_usage),
-           vpx_threads: to_string!(cap_vpx_threads),
+           audio_bitrate: parse!(engine, cap_audio_bitrate),
+           video_bitrate: parse!(engine, cap_video_bitrate),
+           crf: to_string!(engine, cap_crf),
+           filename: to_string!(engine, cap_filename),
+           muxer_settings: to_string!(engine, cap_muxer_settings),
+           preset: to_string!(engine, cap_x264_preset),
+           time_base: parse_fps(&to_string!(engine, cap_fps))
+               .ok_or("invalid cap_fps")?,
+           audio_encoder_settings: to_string!(engine, cap_audio_encoder_settings),
+           video_encoder_settings: to_string!(engine, cap_video_encoder_settings),
+           vpx_cpu_usage: to_string!(engine, cap_vpx_cpu_usage),
+           vpx_threads: to_string!(engine, cap_vpx_threads),
+       })
+}
+
+/// Parses the CVar values into `CaptureParameters`.
+fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
+    Ok(CaptureParameters {
+           sound_extra: parse!(engine, cap_sound_extra),
+           time_base: parse_fps(&to_string!(engine, cap_fps))
+               .ok_or("invalid cap_fps")?,
+           volume: parse!(engine, cap_volume),
        })
 }
 
 command!(cap_start, |mut engine| {
-    let parameters = match get_encoder_parameters(&mut engine) {
+    let parameters = match parse_encoder_parameters(&mut engine) {
         Ok(p) => p,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
@@ -434,8 +451,17 @@ command!(cap_start, |mut engine| {
         }
     };
 
+    unsafe {
+        CAPTURE_PARAMETERS = match parse_capture_parameters(&mut engine) {
+            Ok(p) => Some(p),
+            Err(ref e) => {
+                engine.con_print(&format!("{}", e.display()));
+                return;
+            }
+        };
+    }
+
     *CAPTURING.write().unwrap() = true;
-    *TIME_BASE.write().unwrap() = Some(parameters.time_base);
 
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
@@ -452,6 +478,7 @@ command!(cap_start, |mut engine| {
 
 command!(cap_stop, |engine| { stop(&engine); });
 
+// Encoder parameters.
 cvar!(cap_video_bitrate, "0");
 cvar!(cap_audio_bitrate, "320000");
 cvar!(cap_crf, "15");
@@ -463,3 +490,7 @@ cvar!(cap_video_encoder_settings, "");
 cvar!(cap_vpx_cpu_usage, "5");
 cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");
+
+// Capture parameters.
+cvar!(cap_sound_extra, "0");
+cvar!(cap_volume, "0.4");
