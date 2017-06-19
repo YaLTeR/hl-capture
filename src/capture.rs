@@ -396,105 +396,38 @@ fn parse_fps(string: &str) -> Option<Rational> {
     None
 }
 
-command!(cap_start, |mut engine| {
-    let mut parameters = EncoderParameters {
-        audio_bitrate: 0,
-        video_bitrate: 0,
-        crf: String::new(),
-        filename: String::new(),
-        muxer_settings: String::new(),
-        preset: String::new(),
-        time_base: Rational::new(1, 1),
-        audio_encoder_settings: String::new(),
-        video_encoder_settings: String::new(),
-        vpx_cpu_usage: String::new(),
-        vpx_threads: String::new(),
-    };
-
-    match cap_filename.to_string(&mut engine)
-                        .chain_err(|| "invalid cap_filename") {
-        Ok(filename) => parameters.filename = filename,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
-
-    if let Some(time_base) = cap_fps.to_string(&mut engine)
-                                    .ok()
-                                    .and_then(|s| parse_fps(&s))
-    {
-        parameters.time_base = time_base;
-    } else {
-        engine.con_print("Invalid cap_fps.\n");
-        return;
+/// Parses the CVar values into `EncoderParameters`.
+fn get_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
+    macro_rules! to_string {
+        ($cvar:expr) => (
+            $cvar.to_string(engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
+        )
     }
 
-    match cap_crf.parse(&mut engine).chain_err(|| "invalid cap_crf") {
-        Ok(crf) => parameters.crf = crf,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
+    macro_rules! parse {
+        ($cvar:expr) => (
+            $cvar.parse(engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
+        )
+    }
 
-    match cap_video_bitrate.parse(&mut engine)
-                             .chain_err(|| "invalid cap_video_bitrate") {
-        Ok(video_bitrate) => parameters.video_bitrate = video_bitrate,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
+    Ok(EncoderParameters {
+           audio_bitrate: parse!(cap_audio_bitrate),
+           video_bitrate: parse!(cap_video_bitrate),
+           crf: to_string!(cap_crf),
+           filename: to_string!(cap_filename),
+           muxer_settings: to_string!(cap_muxer_settings),
+           preset: to_string!(cap_x264_preset),
+           time_base: parse_fps(&to_string!(cap_fps)).ok_or("invalid cap_fps")?,
+           audio_encoder_settings: to_string!(cap_audio_encoder_settings),
+           video_encoder_settings: to_string!(cap_video_encoder_settings),
+           vpx_cpu_usage: to_string!(cap_vpx_cpu_usage),
+           vpx_threads: to_string!(cap_vpx_threads),
+       })
+}
 
-    match cap_audio_bitrate.parse(&mut engine)
-                             .chain_err(|| "invalid cap_audio_bitrate") {
-        Ok(audio_bitrate) => parameters.audio_bitrate = audio_bitrate,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
-
-    match cap_muxer_settings.parse(&mut engine)
-                              .chain_err(|| "invalid cap_muxer_settings") {
-        Ok(muxer_settings) => parameters.muxer_settings = muxer_settings,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
-
-    match cap_x264_preset.parse(&mut engine)
-                           .chain_err(|| "invalid cap_x264_preset") {
-        Ok(preset) => parameters.preset = preset,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
-
-    match cap_video_encoder_settings.parse(&mut engine)
-                                      .chain_err(|| "invalid cap_video_encoder_settings") {
-        Ok(video_encoder_settings) => parameters.video_encoder_settings = video_encoder_settings,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
-
-    match cap_vpx_cpu_usage.parse(&mut engine)
-                             .chain_err(|| "invalid cap_vpx_cpu_usage") {
-        Ok(cpu_usage) => parameters.vpx_cpu_usage = cpu_usage,
-        Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
-            return;
-        }
-    };
-
-    match cap_vpx_threads.parse(&mut engine)
-                           .chain_err(|| "invalid cap_vpx_threads") {
-        Ok(threads) => parameters.vpx_threads = threads,
+command!(cap_start, |mut engine| {
+    let parameters = match get_encoder_parameters(&mut engine) {
+        Ok(p) => p,
         Err(ref e) => {
             engine.con_print(&format!("{}", e.display()));
             return;
@@ -525,6 +458,7 @@ cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");
 cvar!(cap_muxer_settings, "");
+cvar!(cap_audio_encoder_settings, "");
 cvar!(cap_video_encoder_settings, "");
 cvar!(cap_vpx_cpu_usage, "5");
 cvar!(cap_vpx_threads, "8");
