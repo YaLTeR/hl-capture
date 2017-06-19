@@ -53,8 +53,6 @@ pub struct Encoder {
     audio_position: usize,
 }
 
-unsafe impl Send for Encoder {}
-
 /// Parameters for encoding and muxing.
 pub struct EncoderParameters {
     pub audio_bitrate: usize,
