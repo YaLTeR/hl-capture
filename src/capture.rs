@@ -260,7 +260,7 @@ fn encode(encoder: &mut Option<Encoder>,
     Ok(())
 }
 
-pub fn initialize() {
+pub fn initialize(_: &Engine) {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
         let (tx, rx) = channel::<VideoBuffer>();
@@ -277,7 +277,7 @@ pub fn initialize() {
     });
 }
 
-pub fn get_buffer((width, height): (u32, u32)) -> VideoBuffer {
+pub fn get_buffer(_: &Engine, (width, height): (u32, u32)) -> VideoBuffer {
     let mut buf = VIDEO_BUF_RECEIVER.lock()
                                     .unwrap()
                                     .as_ref()
@@ -290,7 +290,7 @@ pub fn get_buffer((width, height): (u32, u32)) -> VideoBuffer {
     buf
 }
 
-pub fn get_audio_buffer() -> AudioBuffer {
+pub fn get_audio_buffer(_: &Engine) -> AudioBuffer {
     AUDIO_BUF_RECEIVER.lock()
                       .unwrap()
                       .as_ref()
@@ -299,7 +299,7 @@ pub fn get_audio_buffer() -> AudioBuffer {
                       .unwrap()
 }
 
-pub fn get_message() -> Option<String> {
+pub fn get_message(_: &Engine) -> Option<String> {
     match MESSAGE_RECEIVER.lock()
                             .unwrap()
                             .as_ref()
@@ -311,7 +311,7 @@ pub fn get_message() -> Option<String> {
     }
 }
 
-pub fn capture(buf: VideoBuffer, frametime: f64) {
+pub fn capture(_: &Engine, buf: VideoBuffer, frametime: f64) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
@@ -320,7 +320,7 @@ pub fn capture(buf: VideoBuffer, frametime: f64) {
                           .unwrap();
 }
 
-pub fn capture_audio(buf: AudioBuffer) {
+pub fn capture_audio(_: &Engine, buf: AudioBuffer) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()

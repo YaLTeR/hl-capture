@@ -165,11 +165,13 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
         panic!("{}", e.display());
     }
 
+    let engine = Engine::new();
+
     // Initialize the encoding.
     encode::initialize();
 
     // Initialize the capturing.
-    capture::initialize();
+    capture::initialize(&engine);
 
     let rv = real!(RunListenServer)(instance,
                                     basedir,
@@ -296,14 +298,14 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
         SOUND_REMAINDER = samples - samples_rounded;
 
         AUDIO_BUFFER.with(|b| {
-                              let mut buf = capture::get_audio_buffer();
+                              let mut buf = capture::get_audio_buffer(&engine);
                               buf.data_mut().clear();
                               *b.borrow_mut() = Some(buf);
                           });
 
         real!(S_PaintChannels)(paintedtime + samples_rounded as i32);
 
-        AUDIO_BUFFER.with(|b| capture::capture_audio(b.borrow_mut().take().unwrap()));
+        AUDIO_BUFFER.with(|b| capture::capture_audio(&engine, b.borrow_mut().take().unwrap()));
 
         CAPTURE_SOUND = false;
     }
@@ -342,9 +344,11 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
 /// Flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
+    let engine = Engine::new();
+
     // Print all messages that happened.
     loop {
-        match capture::get_message() {
+        match capture::get_message(&engine) {
             Some(msg) => con_print(&msg),
             None => break,
         }
@@ -365,7 +369,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                                                 .unwrap()
                                                 .start_section("get_buffer()")
                                            });
-        let mut buf = capture::get_buffer((w, h));
+        let mut buf = capture::get_buffer(&engine, (w, h));
 
         let texture = (*ptr!(s_BackBufferFBO)).Tex;
         if texture != 0 {
@@ -510,7 +514,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                                                 .unwrap()
                                                 .start_section("capture()")
                                            });
-        capture::capture(buf, *ptr!(host_frametime));
+        capture::capture(&engine, buf, *ptr!(host_frametime));
 
         capture::GAME_THREAD_PROFILER.with(|p| {
                                                p.borrow_mut().as_mut().unwrap().stop(false).unwrap()
