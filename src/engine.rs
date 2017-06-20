@@ -9,12 +9,20 @@ use hooks::hw;
 static mut MAIN_THREAD_DATA: MainThreadDataContainer = MainThreadDataContainer {
     data: MainThreadData {
         capture_parameters: None,
+        capture_sound: false,
+        sound_remainder: 0f64,
+        sound_capture_mode: ::hooks::hw::SoundCaptureMode::Normal,
+        inside_key_event: false,
     },
 };
 
 /// Global variables accessible from the main game thread.
 pub struct MainThreadData {
     pub capture_parameters: Option<::capture::CaptureParameters>,
+    pub capture_sound: bool,
+    pub sound_remainder: f64,
+    pub sound_capture_mode: ::hooks::hw::SoundCaptureMode,
+    pub inside_key_event: bool,
 }
 
 /// A Send+Sync container to allow putting `MainThreadData` into a global variable.
@@ -44,16 +52,6 @@ pub struct EngineCVarGuard<'a> {
     engine_cvar: &'a mut cvar_t,
     _borrow_guard: &'a mut Engine,
 }
-
-/// Holder for a variable that should only be accessible from the main game thread.
-pub struct MainThreadVar<T> {
-    /// This field has to be public because there's no const fn.
-    /// It shouldn't be accessed manually.
-    pub var: T,
-}
-
-unsafe impl<T> Send for MainThreadVar<T> {}
-unsafe impl<T> Sync for MainThreadVar<T> {}
 
 impl Engine {
     /// Creates an instance of Engine.
@@ -126,17 +124,5 @@ impl<'a> Deref for EngineCVarGuard<'a> {
 impl<'a> DerefMut for EngineCVarGuard<'a> {
     fn deref_mut(&mut self) -> &mut cvar_t {
         self.engine_cvar
-    }
-}
-
-impl<T> MainThreadVar<T> {
-    /// Retrieves a reference to the stored variable.
-    pub fn get(&self, _: &Engine) -> &T {
-        &self.var
-    }
-
-    /// Retrieves a mutable reference to the stored variable.
-    pub fn get_mut(&mut self, _: &Engine) -> &mut T {
-        &mut self.var
     }
 }
