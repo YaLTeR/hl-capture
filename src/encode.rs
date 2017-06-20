@@ -8,7 +8,6 @@ use ffmpeg::util::frame;
 use std::cmp;
 use std::sync::{Mutex, ONCE_INIT, Once};
 
-// use capture;
 use errors::*;
 
 lazy_static! {
@@ -61,6 +60,7 @@ pub struct EncoderParameters {
     pub video_encoder_settings: String,
     pub vpx_cpu_usage: String,
     pub vpx_threads: String,
+    pub video_resolution: (u32, u32),
 }
 
 /// Lazily-initialized pixel format converter.
@@ -76,7 +76,7 @@ struct PixFmtConverterInner {
 }
 
 impl Encoder {
-    pub fn start(parameters: &EncoderParameters, (width, height): (u32, u32)) -> Result<Self> {
+    pub fn start(parameters: &EncoderParameters) -> Result<Self> {
         let video_codec = VIDEO_ENCODER.lock().unwrap();
         ensure!(video_codec.is_some(), "video encoder was not set");
         let video_codec = video_codec.unwrap();
@@ -105,6 +105,7 @@ impl Encoder {
                 encoder.set_flags(codec::flag::GLOBAL_HEADER);
             }
 
+            let (width, height) = parameters.video_resolution;
             encoder.set_width(width);
             encoder.set_height(height);
             encoder.set_time_base(parameters.time_base);

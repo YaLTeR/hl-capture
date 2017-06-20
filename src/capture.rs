@@ -195,23 +195,23 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
     // When this is true, ignore any received frames.
     let mut drop_frames = true;
 
-    // Encoding parameters, set on CaptureStart.
-    let mut parameters = None;
-
     // The encoder itself.
     let mut encoder: Option<Encoder> = None;
-
-    // TODO: this thing is kind of a hack, think what can be done about it.
-    // A buffer for audio frames that arrive before the first video frame, and thus cannot be
-    // encoded because the encoder hasn't been initialized yet.
-    let mut audio_buffer = Vec::new();
 
     // Event loop for the capture thread.
     loop {
         match event_receiver.recv().unwrap() {
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
-                parameters = Some(params);
+                encoder = Encoder::start(&params)
+                    .chain_err(|| "could not start the encoder")
+                    .map_err(|ref e| {
+                                 *CAPTURING.write().unwrap() = false;
+                                 drop_frames = true;
+
+                                 message_sender.send(format!("{}", e.display())).unwrap();
+                             })
+                    .ok();
             }
 
             CaptureThreadEvent::CaptureStop => {
@@ -233,12 +233,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                     continue;
                 }
 
-                if let Err(e) = encode(&mut encoder,
-                                       buffer,
-                                       times,
-                                       parameters.as_ref().unwrap(),
-                                       &mut frame)
-                {
+                if let Err(e) = encode(&mut encoder, buffer, times, &mut frame) {
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
 
@@ -253,23 +248,8 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                     continue;
                 }
 
-                // If the encoder hasn't been initialized yet, queue the audio frames in the
-                // buffer.
-                if encoder.is_none() {
-                    audio_buffer.extend(buffer.data().into_iter());
-                    continue;
-                }
-
-                // Encode data from the audio buffer, if any, followed by the just received data.
-                let result =
-                    if !audio_buffer.is_empty() {
-                        let result = encoder.as_mut().unwrap().take_audio(&audio_buffer);
-                        audio_buffer.clear();
-                        result
-                    } else {
-                        Ok(())
-                    }
-                    .and_then(|_| encoder.as_mut().unwrap().take_audio(buffer.data()));
+                // Encode the audio.
+                let result = encoder.as_mut().unwrap().take_audio(buffer.data());
 
                 drop(audio_buf_sender);
 
@@ -287,7 +267,6 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
 fn encode(encoder: &mut Option<Encoder>,
           buf: SendOnDrop<VideoBuffer>,
           times: usize,
-          parameters: &EncoderParameters,
           frame: &mut VideoFrame)
           -> Result<()> {
     // Copy pixels into our video frame.
@@ -295,12 +274,6 @@ fn encode(encoder: &mut Option<Encoder>,
 
     // We're done with buf, now it can receive the next pack of pixels.
     drop(buf);
-
-    // If the encoder wasn't initialized, initialize it.
-    if encoder.is_none() {
-        *encoder = Some(Encoder::start(parameters, (frame.width(), frame.height()))
-                            .chain_err(|| "could not start the encoder")?);
-    }
 
     let mut encoder = encoder.as_mut().unwrap();
 
@@ -465,7 +438,6 @@ macro_rules! parse {
 
 /// Parses the CVar values into `EncoderParameters`.
 fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
-
     Ok(EncoderParameters {
            audio_bitrate: parse!(engine, cap_audio_bitrate),
            video_bitrate: parse!(engine, cap_video_bitrate),
@@ -479,6 +451,7 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
            video_encoder_settings: to_string!(engine, cap_video_encoder_settings),
            vpx_cpu_usage: to_string!(engine, cap_vpx_cpu_usage),
            vpx_threads: to_string!(engine, cap_vpx_threads),
+           video_resolution: hw::get_resolution(&engine),
        })
 }
 

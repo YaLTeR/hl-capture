@@ -65,16 +65,6 @@ struct Pointers {
     window_rect: *mut RECT,
 }
 
-static KERNEL_SRC: &str = r#"
-    __kernel void increase_blue(read_only image2d_t src_image,
-                                write_only image2d_t dst_image) {
-        int2 coord = (int2)(get_global_id(0), get_global_id(1));
-        float4 pixel = read_imagef(src_image, coord);
-        pixel += (float4)(0.0, 0.0, 0.5, 0.0);
-        write_imagef(dst_image, coord, pixel);
-    }
-"#;
-
 thread_local! {
     static AUDIO_BUFFER: RefCell<Option<capture::AudioBuffer>> = RefCell::new(None);
     static PROQUE: ocl::ProQue = ocl::ProQue::builder()
@@ -83,7 +73,7 @@ thread_local! {
                  .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
                  .build()
                  .expect("Context build()"))
-        .src(KERNEL_SRC)
+        .src(include_str!("../../cl_src/color_conversion.cl"))
         .build()
         .expect("ProQue build()");
 }
@@ -363,7 +353,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
         // If frames is zero, we need to skip this frame.
         if frames > 0 {
-            let (w, h) = get_resolution();
+            let (w, h) = get_resolution(&engine);
 
             let mut buf = capture::get_buffer(&engine, (w, h));
 
@@ -562,21 +552,20 @@ pub unsafe fn cmd_argv(index: u32) -> String {
 }
 
 /// Returns the current game resolution.
-///
-/// # Safety
-/// Unsafe because this function should only be called from the main game thread.
-unsafe fn get_resolution() -> (u32, u32) {
+pub fn get_resolution(_: &Engine) -> (u32, u32) {
     let mut width;
     let mut height;
 
-    if real!(VideoMode_IsWindowed)() != 0 {
-        let window_rect = *ptr!(window_rect);
-        width = window_rect.right - window_rect.left;
-        height = window_rect.bottom - window_rect.top;
-    } else {
-        width = mem::uninitialized();
-        height = mem::uninitialized();
-        real!(VideoMode_GetCurrentVideoMode)(&mut width, &mut height, ptr::null_mut());
+    unsafe {
+        if real!(VideoMode_IsWindowed)() != 0 {
+            let window_rect = *ptr!(window_rect);
+            width = window_rect.right - window_rect.left;
+            height = window_rect.bottom - window_rect.top;
+        } else {
+            width = mem::uninitialized();
+            height = mem::uninitialized();
+            real!(VideoMode_GetCurrentVideoMode)(&mut width, &mut height, ptr::null_mut());
+        }
     }
 
     width = cmp::max(0, width);
