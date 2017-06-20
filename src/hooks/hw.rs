@@ -401,35 +401,42 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
                     image.cmd().gl_acquire().enq().expect("gl_acquire()");
 
-                    if false
-                    /* engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P */
-                    {
+                    if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
                         // TODO
-                        buf.set_format(format::Pixel::RGBA);
+                        buf.set_format(format::Pixel::YUV444P);
 
-                        let dst_image = ocl::Image::<u8>::builder()
-                            .channel_order(ocl::enums::ImageChannelOrder::Rgba)
-                            .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
-                            .image_type(ocl::enums::MemObjectType::Image2d)
-                            .dims((w, h))
-                            .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
-                            .queue(pro_que.queue().clone())
+                        let ocl_buf = ocl::Buffer::<u8>::builder().queue(pro_que.queue().clone())
+                            .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                            .dims(w * h * 3)
+                            // .host_data(buf.as_mut_slice())
                             .build()
-                            .expect("Image build");
+                            .expect("Buffer build");
 
-                        let kernel = pro_que.create_kernel("increase_blue")
+                        // let dst_image = ocl::Image::<u8>::builder()
+                        //     .channel_order(ocl::enums::ImageChannelOrder::Rgba)
+                        //     .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
+                        //     .image_type(ocl::enums::MemObjectType::Image2d)
+                        //     .dims((w, h))
+                        //     .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
+                        //     .queue(pro_que.queue().clone())
+                        //     .build()
+                        //     .expect("Image build");
+
+                        let kernel = pro_que.create_kernel("rgb_to_yuv444_601_limited")
                                             .unwrap()
                                             .gws((w, h))
                                             .arg_img(&image)
-                                            .arg_img(&dst_image);
+                                            .arg_buf(&ocl_buf);
 
                         kernel.enq().expect("kernel.enq()");
 
                         // pro_que.finish().expect("pro_que.finish()");
 
-                        dst_image.read(buf.as_mut_slice())
-                                 .enq()
-                                 .expect("dst_image.read()");
+                        ocl_buf.read(buf.as_mut_slice()).enq().expect("ocl_buf.read()");
+
+                        // dst_image.read(buf.as_mut_slice())
+                        //          .enq()
+                        //          .expect("dst_image.read()");
                     } else {
                         buf.set_format(format::Pixel::RGBA);
 

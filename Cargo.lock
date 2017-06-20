@@ -94,7 +94,7 @@ dependencies = [
 [[package]]
 name = "ffmpeg"
 version = "0.2.0-alpha.2"
-source = "git+https://github.com/yalter/rust-ffmpeg.git?branch=plane-size-fix#aa9d42b50f422c880c2a2e04585eb12315869797"
+source = "git+https://github.com/yalter/rust-ffmpeg.git?branch=plane-size-fix#a76c3368309f9f7d09de77bc7090b4f430df2fe7"
 dependencies = [
  "bitflags 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ffmpeg-sys 3.2.1 (registry+https://github.com/rust-lang/crates.io-index)",

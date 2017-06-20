@@ -58,6 +58,7 @@ pub struct VideoBuffer {
     width: u32,
     height: u32,
     format: format::Pixel,
+    components: u8,
 }
 
 pub struct AudioBuffer {
@@ -84,6 +85,7 @@ impl VideoBuffer {
             width: 0,
             height: 0,
             format: format::Pixel::RGB24,
+            components: format::Pixel::RGB24.descriptor().unwrap().nb_components(),
         }
     }
 
@@ -96,7 +98,7 @@ impl VideoBuffer {
                      height);
 
             self.data.resize((width * height *
-                                  self.format.descriptor().unwrap().nb_components() as u32) as
+                                  self.components as u32) as
                                  usize,
                              0);
             self.width = width;
@@ -109,10 +111,9 @@ impl VideoBuffer {
             println!("Changing format from {:?} to {:?}", self.format, format);
 
             self.format = format;
+            self.components = format.descriptor().expect("invalid pixel format").nb_components();
             self.data.resize((self.width * self.height *
-                                  format.descriptor()
-                                        .expect("invalid pixel format")
-                                        .nb_components() as
+                              self.components as
                                       u32) as usize,
                              0);
         }
@@ -124,22 +125,45 @@ impl VideoBuffer {
 
     pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
         // Make sure frame is of correct size.
-        if self.width != frame.width() || self.height != frame.height() {
-            *frame = VideoFrame::new(format::Pixel::RGBA, self.width, self.height);
+        if self.width != frame.width() || self.height != frame.height() || self.format != frame.format() {
+            *frame = VideoFrame::new(self.format, self.width, self.height);
         }
 
         // Copy the pixel data into the frame.
-        let stride = frame.stride(0) as u32;
-        let mut data = frame.data_mut(0);
+        let mut offset = 0;
+        let components_per_plane = if frame.planes() == 1 {
+            self.components
+        } else {
+            1
+        } as usize;
 
-        for y in 0..self.height {
-            unsafe {
-                ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * 4) as isize),
-                                         data.as_mut_ptr()
-                                             .offset(((self.height - y - 1) * stride) as isize),
-                                         (self.width * 4) as usize);
+        for i in 0..frame.planes() {
+            let stride = frame.stride(i);
+            let plane_width = frame.plane_width(i) as usize;
+            let plane_height = frame.plane_height(i) as usize;
+
+            let mut plane_data = frame.data_mut(i);
+            for y in 0..plane_height {
+                unsafe {
+                    ptr::copy_nonoverlapping(self.data.as_ptr().offset(offset),
+                        plane_data.as_mut_ptr().offset(((plane_height - y - 1) * stride) as isize),
+                        plane_width * components_per_plane);
+                }
+                offset += (plane_width * components_per_plane) as isize;
             }
         }
+
+        // let stride = frame.stride(0) as u32;
+        // let mut data = frame.data_mut(0);
+        //
+        // for y in 0..self.height {
+        //     unsafe {
+        //         ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * self.components as u32) as isize),
+        //                                  data.as_mut_ptr()
+        //                                      .offset(((self.height - y - 1) * stride) as isize),
+        //                                  (self.width * self.components as u32) as usize);
+        //     }
+        // }
     }
 }
 
