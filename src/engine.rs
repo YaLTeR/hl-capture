@@ -6,10 +6,30 @@ use command;
 use cvar::{CVar, cvar_t};
 use hooks::hw;
 
+static mut MAIN_THREAD_DATA: MainThreadDataContainer = MainThreadDataContainer {
+    data: MainThreadData {
+        capture_parameters: None,
+    },
+};
+
+/// Global variables accessible from the main game thread.
+pub struct MainThreadData {
+    pub capture_parameters: Option<::capture::CaptureParameters>,
+}
+
+/// A Send+Sync container to allow putting `MainThreadData` into a global variable.
+struct MainThreadDataContainer {
+    data: MainThreadData,
+}
+
+unsafe impl Send for MainThreadDataContainer {}
+unsafe impl Sync for MainThreadDataContainer {}
+
 /// A "container" for unsafe engine functions.
 ///
 /// It's used for exposing safe interfaces for these functions where they can be used safely
-/// (for example, in console command handlers).
+/// (for example, in console command handlers). Engine also serves as a static guarantee of being
+/// in the main game thread.
 // Don't implement Clone/Copy, this will break EngineCVarGuard static guarantee.
 pub struct Engine {
     /// This field serves two purposes:
@@ -42,6 +62,11 @@ impl Engine {
     /// Unsafe because this function should only be called from the main game thread.
     pub unsafe fn new() -> Self {
         Engine { _private: PhantomData }
+    }
+
+    /// Returns a mutable reference to the main thread global variables.
+    pub fn data(&self) -> &mut MainThreadData {
+        unsafe { &mut MAIN_THREAD_DATA.data }
     }
 
     /// Returns an iterator over the console command arguments.

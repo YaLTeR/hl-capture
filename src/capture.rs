@@ -9,7 +9,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 use encode::{Encoder, EncoderParameters};
-use engine::{Engine, MainThreadVar};
+use engine::Engine;
 use errors::*;
 use hooks::hw;
 use profiler::*;
@@ -35,9 +35,6 @@ thread_local! {
     pub static AUDIO_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
     // pub static CAPTURE_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
 }
-
-static mut CAPTURE_PARAMETERS: MainThreadVar<Option<CaptureParameters>> =
-    MainThreadVar { var: None };
 
 pub struct CaptureParameters {
     pub sound_extra: f64,
@@ -340,7 +337,7 @@ pub fn is_capturing() -> bool {
 }
 
 pub fn get_capture_parameters(engine: &Engine) -> &CaptureParameters {
-    unsafe { CAPTURE_PARAMETERS.get(engine).as_ref().unwrap() }
+    engine.data().capture_parameters.as_ref().unwrap()
 }
 
 pub fn stop(engine: &Engine) {
@@ -452,15 +449,13 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    unsafe {
-        *CAPTURE_PARAMETERS.get_mut(&engine) = match parse_capture_parameters(&mut engine) {
-            Ok(p) => Some(p),
-            Err(ref e) => {
-                engine.con_print(&format!("{}", e.display()));
-                return;
-            }
-        };
-    }
+    engine.data().capture_parameters = match parse_capture_parameters(&mut engine) {
+        Ok(p) => Some(p),
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
 
     *CAPTURING.write().unwrap() = true;
 
