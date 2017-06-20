@@ -352,172 +352,89 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     }
 
     if capture::is_capturing() {
-        capture::GAME_THREAD_PROFILER.with(|p| {
-                                               p.borrow_mut()
-                                                .as_mut()
-                                                .unwrap()
-                                                .start_section("get_resolution()")
-                                           });
-        let (w, h) = get_resolution();
-
-        capture::GAME_THREAD_PROFILER.with(|p| {
-                                               p.borrow_mut()
-                                                .as_mut()
-                                                .unwrap()
-                                                .start_section("get_buffer()")
-                                           });
-        let mut buf = capture::get_buffer(&engine, (w, h));
-
-        let texture = (*ptr!(s_BackBufferFBO)).Tex;
-        if texture != 0 {
-            capture::GAME_THREAD_PROFILER.with(|p| {
-                                                   p.borrow_mut()
-                                                    .as_mut()
-                                                    .unwrap()
-                                                    .start_section("gl::Finish()")
-                                               });
-            gl::Finish();
-
-            PROQUE.with(|pro_que| {
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("ImageDescriptor::new()")
-                                                   });
-                let descr = ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
-                                                                w as usize,
-                                                                h as usize,
-                                                                1,
-                                                                1,
-                                                                0,
-                                                                0,
-                                                                None);
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("Image::from_gl_texture()")
-                                                   });
-                let image =
-                    ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
-                                                      ocl::flags::MEM_READ_ONLY,
-                                                      descr,
-                                                      ocl::core::GlTextureTarget::GlTexture2d,
-                                                      0,
-                                                      texture)
-                    .expect("ocl::Image::from_gl_texture()");
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("Building dst_image")
-                                                   });
-                let dst_image = ocl::Image::<u8>::builder()
-                    .channel_order(ocl::enums::ImageChannelOrder::Rgba)
-                    .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
-                    .image_type(ocl::enums::MemObjectType::Image2d)
-                    .dims((w, h))
-                    .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
-                    .queue(pro_que.queue().clone())
-                    .build()
-                    .expect("Image build");
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("gl_acquire()")
-                                                   });
-                image.cmd().gl_acquire().enq().expect("gl_acquire()");
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("Creating kernel")
-                                                   });
-                let kernel = pro_que.create_kernel("increase_blue")
-                                    .unwrap()
-                                    .gws((w, h))
-                                    .arg_img(&image)
-                                    .arg_img(&dst_image);
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("kernel.enq()")
-                                                   });
-                kernel.enq().expect("kernel.enq()");
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("pro_que.finish()")
-                                                   });
-                pro_que.finish().expect("pro_que.finish()");
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("dst_image.read()")
-                                                   });
-                dst_image.read(buf.as_mut_slice())
-                         .enq()
-                         .expect("dst_image.read()");
-
-                capture::GAME_THREAD_PROFILER.with(|p| {
-                                                       p.borrow_mut()
-                                                        .as_mut()
-                                                        .unwrap()
-                                                        .start_section("gl_release()")
-                                                   });
-                image.cmd().gl_release().enq().expect("gl_release()");
-            });
-        } else {
-            capture::GAME_THREAD_PROFILER.with(|p| {
-                                                   p.borrow_mut()
-                                                    .as_mut()
-                                                    .unwrap()
-                                                    .start_section("gl::PixelStorei()")
-                                               });
-            // Our buffer expects 1-byte alignment.
-            gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-
-            capture::GAME_THREAD_PROFILER.with(|p| {
-                                                   p.borrow_mut()
-                                                    .as_mut()
-                                                    .unwrap()
-                                                    .start_section("gl::ReadPixels()")
-                                               });
-            // Get the pixels!
-            gl::ReadPixels(0,
-                           0,
-                           w as GLsizei,
-                           h as GLsizei,
-                           gl::RGB,
-                           gl::UNSIGNED_BYTE,
-                           buf.as_mut_slice().as_mut_ptr() as _);
-        }
-
-        capture::GAME_THREAD_PROFILER.with(|p| {
-                                               p.borrow_mut()
-                                                .as_mut()
-                                                .unwrap()
-                                                .start_section("capture()")
-                                           });
-        capture::capture(&engine, buf, *ptr!(host_frametime));
-
-        capture::GAME_THREAD_PROFILER.with(|p| {
-                                               p.borrow_mut().as_mut().unwrap().stop(false).unwrap()
-                                           });
-
+        // Always capture sound.
         engine.data().capture_sound = true;
+
+        let frames = engine.data()
+                           .time_interpolator
+                           .as_mut()
+                           .unwrap()
+                           .time_passed(*ptr!(host_frametime));
+
+        // If frames is zero, we need to skip this frame.
+        if frames > 0 {
+            let (w, h) = get_resolution();
+
+            let mut buf = capture::get_buffer(&engine, (w, h));
+
+            let texture = (*ptr!(s_BackBufferFBO)).Tex;
+            if texture != 0 {
+                gl::Finish();
+
+                PROQUE.with(|pro_que| {
+                    let descr =
+                        ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
+                                                            w as usize,
+                                                            h as usize,
+                                                            1,
+                                                            1,
+                                                            0,
+                                                            0,
+                                                            None);
+
+                    let image =
+                        ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
+                                                          ocl::flags::MEM_READ_ONLY,
+                                                          descr,
+                                                          ocl::core::GlTextureTarget::GlTexture2d,
+                                                          0,
+                                                          texture)
+                        .expect("ocl::Image::from_gl_texture()");
+
+                    let dst_image = ocl::Image::<u8>::builder()
+                        .channel_order(ocl::enums::ImageChannelOrder::Rgba)
+                        .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
+                        .image_type(ocl::enums::MemObjectType::Image2d)
+                        .dims((w, h))
+                        .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
+                        .queue(pro_que.queue().clone())
+                        .build()
+                        .expect("Image build");
+
+                    image.cmd().gl_acquire().enq().expect("gl_acquire()");
+
+                    let kernel = pro_que.create_kernel("increase_blue")
+                                        .unwrap()
+                                        .gws((w, h))
+                                        .arg_img(&image)
+                                        .arg_img(&dst_image);
+
+                    kernel.enq().expect("kernel.enq()");
+
+                    // pro_que.finish().expect("pro_que.finish()");
+
+                    dst_image.read(buf.as_mut_slice())
+                             .enq()
+                             .expect("dst_image.read()");
+
+                    image.cmd().gl_release().enq().expect("gl_release()");
+                });
+            } else {
+                // Our buffer expects 1-byte alignment.
+                gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+
+                // Get the pixels!
+                gl::ReadPixels(0,
+                               0,
+                               w as GLsizei,
+                               h as GLsizei,
+                               gl::RGB,
+                               gl::UNSIGNED_BYTE,
+                               buf.as_mut_slice().as_mut_ptr() as _);
+            }
+
+            capture::capture(&engine, buf, frames);
+        }
     }
 
     real!(Sys_VID_FlipScreen)();
@@ -677,7 +594,9 @@ pub fn reset_sound_capture_remainder(engine: &Engine) {
 pub fn capture_remaining_sound(engine: &Engine) {
     engine.data().sound_capture_mode = SoundCaptureMode::Remaining;
     engine.data().capture_sound = true;
-    unsafe { S_PaintChannels(0); }
+    unsafe {
+        S_PaintChannels(0);
+    }
     engine.data().sound_capture_mode = SoundCaptureMode::Normal;
 }
 

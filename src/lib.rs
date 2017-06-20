@@ -28,7 +28,7 @@ mod engine;
 mod hooks {
     pub mod hw;
 }
-mod profiler;
+// mod profiler;
 mod sdl;
 
 pub use self::hooks::hw::RunListenServer;

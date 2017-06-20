@@ -357,21 +357,6 @@ impl Encoder {
         }
 
         Ok(())
-
-        // let time_base: f64 = self.time_base.into();
-        // self.remainder += frametime / time_base;
-        //
-        // loop {
-        //     // Push this frame as long as it takes up the most of the video frame.
-        //     // TODO: move this logic somewhere to skip glReadPixels and other stuff
-        //     // altogether if we're gonna drop this frame anyway.
-        //     if self.remainder <= 0.5f64 {
-        //         break;
-        //     }
-        //
-        //     self.push_frame()?;
-        //     self.remainder -= 1f64;
-        // }
     }
 
     /// Encodes 16-bit signed interleaved 2-channel stereo sound.

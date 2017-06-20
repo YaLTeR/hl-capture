@@ -1,7 +1,6 @@
 use error_chain::ChainedError;
 use ffmpeg::{Rational, format};
 use ffmpeg::frame::Video as VideoFrame;
-use std::cell::RefCell;
 use std::ops::Deref;
 use std::ptr;
 use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
@@ -12,7 +11,7 @@ use encode::{Encoder, EncoderParameters};
 use engine::Engine;
 use errors::*;
 use hooks::hw;
-use profiler::*;
+// use profiler::*;
 
 lazy_static! {
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
@@ -31,8 +30,8 @@ lazy_static! {
 }
 
 thread_local! {
-    pub static GAME_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
-    pub static AUDIO_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
+    // pub static GAME_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
+    // pub static AUDIO_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
     // pub static CAPTURE_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
 }
 
@@ -45,7 +44,7 @@ pub struct CaptureParameters {
 enum CaptureThreadEvent {
     CaptureStart(EncoderParameters),
     CaptureStop,
-    VideoFrame((VideoBuffer, f64)),
+    VideoFrame((VideoBuffer, usize)),
     AudioFrame(AudioBuffer),
 }
 
@@ -62,6 +61,14 @@ pub struct AudioBuffer {
 struct SendOnDrop<'a, T: 'a> {
     buffer: Option<T>,
     channel: &'a Sender<T>,
+}
+
+pub struct TimeInterpolator {
+    /// Difference, in video frames, between how much time passed in-game and how much video we
+    /// output
+    remainder: f64,
+
+    time_base: f64,
 }
 
 impl VideoBuffer {
@@ -149,6 +156,30 @@ impl<'a, T> Deref for SendOnDrop<'a, T> {
     }
 }
 
+impl TimeInterpolator {
+    pub fn new(time_base: f64) -> Self {
+        assert!(time_base > 0f64);
+
+        Self {
+            remainder: 0f64,
+            time_base,
+        }
+    }
+
+    /// Updates the interpolator state and returns the number of times this frame should be
+    /// sent to the encoder.
+    pub fn time_passed(&mut self, time: f64) -> usize {
+        self.remainder += time / self.time_base;
+
+        // Push this frame as long as it takes up the most of the video frame.
+        // Remainder is > -0.5 at all times.
+        let frames = (self.remainder + 0.5) as usize;
+        self.remainder -= frames as f64;
+
+        return frames;
+    }
+}
+
 fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                   audio_buf_sender: &Sender<AudioBuffer>,
                   message_sender: &Sender<String>,
@@ -170,6 +201,11 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
     // The encoder itself.
     let mut encoder: Option<Encoder> = None;
 
+    // TODO: this thing is kind of a hack, think what can be done about it.
+    // A buffer for audio frames that arrive before the first video frame, and thus cannot be
+    // encoded because the encoder hasn't been initialized yet.
+    let mut audio_buffer = Vec::new();
+
     // Event loop for the capture thread.
     loop {
         match event_receiver.recv().unwrap() {
@@ -190,7 +226,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 drop_frames = true;
             }
 
-            CaptureThreadEvent::VideoFrame((buffer, frametime)) => {
+            CaptureThreadEvent::VideoFrame((buffer, times)) => {
                 let buffer = SendOnDrop::new(buffer, &video_buf_sender);
 
                 if drop_frames {
@@ -199,7 +235,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
 
                 if let Err(e) = encode(&mut encoder,
                                        buffer,
-                                       frametime,
+                                       times,
                                        parameters.as_ref().unwrap(),
                                        &mut frame)
                 {
@@ -217,7 +253,23 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                     continue;
                 }
 
-                let result = encoder.as_mut().unwrap().take_audio(buffer.data());
+                // If the encoder hasn't been initialized yet, queue the audio frames in the
+                // buffer.
+                if encoder.is_none() {
+                    audio_buffer.extend(buffer.data().into_iter());
+                    continue;
+                }
+
+                // Encode data from the audio buffer, if any, followed by the just received data.
+                let result =
+                    if !audio_buffer.is_empty() {
+                        let result = encoder.as_mut().unwrap().take_audio(&audio_buffer);
+                        audio_buffer.clear();
+                        result
+                    } else {
+                        Ok(())
+                    }
+                    .and_then(|_| encoder.as_mut().unwrap().take_audio(buffer.data()));
 
                 drop(audio_buf_sender);
 
@@ -234,7 +286,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
 
 fn encode(encoder: &mut Option<Encoder>,
           buf: SendOnDrop<VideoBuffer>,
-          frametime: f64,
+          times: usize,
           parameters: &EncoderParameters,
           frame: &mut VideoFrame)
           -> Result<()> {
@@ -256,8 +308,7 @@ fn encode(encoder: &mut Option<Encoder>,
             "resolution changes are not supported");
 
     // Encode the frame.
-    // TODO: correct argument.
-    encoder.take(frame, 1)
+    encoder.take(frame, times)
            .chain_err(|| "could not encode the frame")?;
 
     Ok(())
@@ -314,12 +365,12 @@ pub fn get_message(_: &Engine) -> Option<String> {
     }
 }
 
-pub fn capture(_: &Engine, buf: VideoBuffer, frametime: f64) {
+pub fn capture(_: &Engine, buf: VideoBuffer, times: usize) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
                           .unwrap()
-                          .send(CaptureThreadEvent::VideoFrame((buf, frametime)))
+                          .send(CaptureThreadEvent::VideoFrame((buf, times)))
                           .unwrap();
 }
 
@@ -344,6 +395,7 @@ pub fn stop(engine: &Engine) {
     hw::capture_remaining_sound(engine);
 
     *CAPTURING.write().unwrap() = false;
+    engine.data().time_interpolator = None;
 
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
@@ -352,31 +404,31 @@ pub fn stop(engine: &Engine) {
                           .send(CaptureThreadEvent::CaptureStop)
                           .unwrap();
 
-    GAME_THREAD_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
-        if let Ok(data) = p.get_data() {
-            let mut buf = format!("Captured {} frames. Game thread overhead: {:.3} msec:\n",
-                                  data.lap_count,
-                                  data.average_lap_time);
-
-            for &(section, time) in &data.average_section_times {
-                buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
-            }
-
-            engine.con_print(&buf);
-        }
-    });
-    AUDIO_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
-                            if let Ok(data) = p.get_data() {
-                                let mut buf = format!("Audio overhead: {:.3} msec:\n",
-                                                      data.average_lap_time);
-
-                                for &(section, time) in &data.average_section_times {
-                                    buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
-                                }
-
-                                engine.con_print(&buf);
-                            }
-                        });
+    // GAME_THREAD_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
+    //     if let Ok(data) = p.get_data() {
+    //         let mut buf = format!("Captured {} frames. Game thread overhead: {:.3} msec:\n",
+    //                               data.lap_count,
+    //                               data.average_lap_time);
+    //
+    //         for &(section, time) in &data.average_section_times {
+    //             buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
+    //         }
+    //
+    //         engine.con_print(&buf);
+    //     }
+    // });
+    // AUDIO_PROFILER.with(|p| if let Some(p) = p.borrow_mut().take() {
+    //                         if let Ok(data) = p.get_data() {
+    //                             let mut buf = format!("Audio overhead: {:.3} msec:\n",
+    //                                                   data.average_lap_time);
+    //
+    //                             for &(section, time) in &data.average_section_times {
+    //                                 buf.push_str(&format!("- {:.3} msec: {}\n", time, section));
+    //                             }
+    //
+    //                             engine.con_print(&buf);
+    //                         }
+    //                     });
 }
 
 /// Parses the given string and returns a time base.
@@ -457,6 +509,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
+    engine.data().time_interpolator = Some(TimeInterpolator::new(parameters.time_base.into()));
+
     *CAPTURING.write().unwrap() = true;
 
     SEND_TO_CAPTURE_THREAD.lock()
@@ -466,8 +520,8 @@ command!(cap_start, |mut engine| {
                           .send(CaptureThreadEvent::CaptureStart(parameters))
                           .unwrap();
 
-    GAME_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
-    AUDIO_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
+    // GAME_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
+    // AUDIO_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
 
     hw::reset_sound_capture_remainder(&engine);
 });
