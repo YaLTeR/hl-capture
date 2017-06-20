@@ -2,6 +2,7 @@
 #![allow(non_upper_case_globals)]
 
 use error_chain::ChainedError;
+use ffmpeg::format;
 use libc::*;
 use gl;
 use glx;
@@ -14,7 +15,7 @@ use std::mem;
 use std::ptr;
 use std::slice;
 
-use capture;
+use capture::{self, GameThreadEvent};
 use command;
 use cvar;
 use dl;
@@ -335,9 +336,26 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
     // Print all messages that happened.
     loop {
-        match capture::get_message(&engine) {
-            Some(msg) => con_print(&msg),
+        match capture::get_event(&engine) {
+            Some(e) => {
+                match e {
+                    GameThreadEvent::Message(msg) => con_print(&msg),
+                    GameThreadEvent::EncoderPixelFormat(fmt) => {
+                        engine.data().encoder_pixel_format = Some(fmt)
+                    }
+                }
+            }
             None => break,
+        }
+    }
+
+    // If the encoding just started, wait for the pixel format.
+    while capture::is_capturing() && engine.data().encoder_pixel_format.is_none() {
+        match capture::get_event_block(&engine) {
+            GameThreadEvent::Message(msg) => con_print(&msg),
+            GameThreadEvent::EncoderPixelFormat(fmt) => {
+                engine.data().encoder_pixel_format = Some(fmt)
+            }
         }
     }
 
@@ -381,35 +399,48 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                                                           texture)
                         .expect("ocl::Image::from_gl_texture()");
 
-                    let dst_image = ocl::Image::<u8>::builder()
-                        .channel_order(ocl::enums::ImageChannelOrder::Rgba)
-                        .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
-                        .image_type(ocl::enums::MemObjectType::Image2d)
-                        .dims((w, h))
-                        .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
-                        .queue(pro_que.queue().clone())
-                        .build()
-                        .expect("Image build");
-
                     image.cmd().gl_acquire().enq().expect("gl_acquire()");
 
-                    let kernel = pro_que.create_kernel("increase_blue")
-                                        .unwrap()
-                                        .gws((w, h))
-                                        .arg_img(&image)
-                                        .arg_img(&dst_image);
+                    if false
+                    /* engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P */
+                    {
+                        // TODO
+                        buf.set_format(format::Pixel::RGBA);
 
-                    kernel.enq().expect("kernel.enq()");
+                        let dst_image = ocl::Image::<u8>::builder()
+                            .channel_order(ocl::enums::ImageChannelOrder::Rgba)
+                            .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
+                            .image_type(ocl::enums::MemObjectType::Image2d)
+                            .dims((w, h))
+                            .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
+                            .queue(pro_que.queue().clone())
+                            .build()
+                            .expect("Image build");
 
-                    // pro_que.finish().expect("pro_que.finish()");
+                        let kernel = pro_que.create_kernel("increase_blue")
+                                            .unwrap()
+                                            .gws((w, h))
+                                            .arg_img(&image)
+                                            .arg_img(&dst_image);
 
-                    dst_image.read(buf.as_mut_slice())
-                             .enq()
-                             .expect("dst_image.read()");
+                        kernel.enq().expect("kernel.enq()");
+
+                        // pro_que.finish().expect("pro_que.finish()");
+
+                        dst_image.read(buf.as_mut_slice())
+                                 .enq()
+                                 .expect("dst_image.read()");
+                    } else {
+                        buf.set_format(format::Pixel::RGBA);
+
+                        image.read(buf.as_mut_slice()).enq().expect("image.read()");
+                    }
 
                     image.cmd().gl_release().enq().expect("gl_release()");
                 });
             } else {
+                buf.set_format(format::Pixel::RGB24);
+
                 // Our buffer expects 1-byte alignment.
                 gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
 

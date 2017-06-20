@@ -14,6 +14,7 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer = MainThreadDataContainer {
         sound_capture_mode: ::hooks::hw::SoundCaptureMode::Normal,
         inside_key_event: false,
         time_interpolator: None,
+        encoder_pixel_format: None,
     },
 };
 
@@ -25,6 +26,7 @@ pub struct MainThreadData {
     pub sound_capture_mode: ::hooks::hw::SoundCaptureMode,
     pub inside_key_event: bool,
     pub time_interpolator: Option<::capture::TimeInterpolator>,
+    pub encoder_pixel_format: Option<::ffmpeg::format::Pixel>,
 }
 
 /// A Send+Sync container to allow putting `MainThreadData` into a global variable.

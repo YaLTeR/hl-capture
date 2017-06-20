@@ -22,8 +22,8 @@ lazy_static! {
     /// Receives buffers to write samples to.
     static ref AUDIO_BUF_RECEIVER: Mutex<Option<Receiver<AudioBuffer>>> = Mutex::new(None);
 
-    /// Receives messages to print to the game console.
-    static ref MESSAGE_RECEIVER: Mutex<Option<Receiver<String>>> = Mutex::new(None);
+    /// Receives various game thread-related events, such as console messages to print.
+    static ref GAME_THREAD_RECEIVER: Mutex<Option<Receiver<GameThreadEvent>>> = Mutex::new(None);
 
     /// Sends events and frames to encode to the capture thread.
     static ref SEND_TO_CAPTURE_THREAD: Mutex<Option<Sender<CaptureThreadEvent>>> = Mutex::new(None);
@@ -48,10 +48,16 @@ enum CaptureThreadEvent {
     AudioFrame(AudioBuffer),
 }
 
+pub enum GameThreadEvent {
+    Message(String),
+    EncoderPixelFormat(format::Pixel),
+}
+
 pub struct VideoBuffer {
     data: Vec<u8>,
     width: u32,
     height: u32,
+    format: format::Pixel,
 }
 
 pub struct AudioBuffer {
@@ -77,6 +83,7 @@ impl VideoBuffer {
             data: Vec::new(),
             width: 0,
             height: 0,
+            format: format::Pixel::RGB24,
         }
     }
 
@@ -88,9 +95,26 @@ impl VideoBuffer {
                      width,
                      height);
 
-            self.data.resize((width * height * 4) as usize, 0);
+            self.data.resize((width * height *
+                                  self.format.descriptor().unwrap().nb_components() as u32) as
+                                 usize,
+                             0);
             self.width = width;
             self.height = height;
+        }
+    }
+
+    pub fn set_format(&mut self, format: format::Pixel) {
+        if self.format != format {
+            println!("Changing format from {:?} to {:?}", self.format, format);
+
+            self.format = format;
+            self.data.resize((self.width * self.height *
+                                  format.descriptor()
+                                        .expect("invalid pixel format")
+                                        .nb_components() as
+                                      u32) as usize,
+                             0);
         }
     }
 
@@ -182,7 +206,7 @@ impl TimeInterpolator {
 
 fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                   audio_buf_sender: &Sender<AudioBuffer>,
-                  message_sender: &Sender<String>,
+                  event_sender: &Sender<GameThreadEvent>,
                   event_receiver: &Receiver<CaptureThreadEvent>) {
     // Send the buffers to the game thread right away.
     video_buf_sender.send(VideoBuffer::new()).unwrap();
@@ -209,15 +233,23 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                                  *CAPTURING.write().unwrap() = false;
                                  drop_frames = true;
 
-                                 message_sender.send(format!("{}", e.display())).unwrap();
+                                 event_sender.send(GameThreadEvent::Message(format!("{}",
+                                                                                    e.display())))
+                                             .unwrap();
                              })
                     .ok();
+
+                if let Some(ref encoder) = encoder {
+                    event_sender.send(GameThreadEvent::EncoderPixelFormat(encoder.format()))
+                                .unwrap();
+                }
             }
 
             CaptureThreadEvent::CaptureStop => {
                 if let Some(mut encoder) = encoder.take() {
                     if let Err(e) = encoder.finish() {
-                        message_sender.send(format!("{}", e.display())).unwrap();
+                        event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
+                                    .unwrap();
                     }
 
                     // The encoder is dropped here.
@@ -237,7 +269,8 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
 
-                    message_sender.send(format!("{}", e.display())).unwrap();
+                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
+                                .unwrap();
                 }
             }
 
@@ -257,7 +290,8 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                     *CAPTURING.write().unwrap() = false;
                     drop_frames = true;
 
-                    message_sender.send(format!("{}", e.display())).unwrap();
+                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
+                                .unwrap();
                 }
             }
         }
@@ -292,12 +326,12 @@ pub fn initialize(_: &Engine) {
     INIT.call_once(|| {
         let (tx, rx) = channel::<VideoBuffer>();
         let (tx2, rx2) = channel::<AudioBuffer>();
-        let (tx3, rx3) = channel::<String>();
+        let (tx3, rx3) = channel::<GameThreadEvent>();
         let (tx4, rx4) = channel::<CaptureThreadEvent>();
 
         *VIDEO_BUF_RECEIVER.lock().unwrap() = Some(rx);
         *AUDIO_BUF_RECEIVER.lock().unwrap() = Some(rx2);
-        *MESSAGE_RECEIVER.lock().unwrap() = Some(rx3);
+        *GAME_THREAD_RECEIVER.lock().unwrap() = Some(rx3);
         *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx4);
 
         thread::spawn(move || capture_thread(&tx, &tx2, &tx3, &rx4));
@@ -326,16 +360,25 @@ pub fn get_audio_buffer(_: &Engine) -> AudioBuffer {
                       .unwrap()
 }
 
-pub fn get_message(_: &Engine) -> Option<String> {
-    match MESSAGE_RECEIVER.lock()
-                            .unwrap()
-                            .as_ref()
-                            .unwrap()
-                            .try_recv() {
-        Ok(msg) => Some(msg),
+pub fn get_event(_: &Engine) -> Option<GameThreadEvent> {
+    match GAME_THREAD_RECEIVER.lock()
+                                .unwrap()
+                                .as_ref()
+                                .unwrap()
+                                .try_recv() {
+        Ok(event) => Some(event),
         Err(TryRecvError::Empty) => None,
         Err(TryRecvError::Disconnected) => unreachable!(),
     }
+}
+
+pub fn get_event_block(_: &Engine) -> GameThreadEvent {
+    GAME_THREAD_RECEIVER.lock()
+                        .unwrap()
+                        .as_ref()
+                        .unwrap()
+                        .recv()
+                        .unwrap()
 }
 
 pub fn capture(_: &Engine, buf: VideoBuffer, times: usize) {
@@ -369,6 +412,7 @@ pub fn stop(engine: &Engine) {
 
     *CAPTURING.write().unwrap() = false;
     engine.data().time_interpolator = None;
+    engine.data().encoder_pixel_format = None;
 
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
