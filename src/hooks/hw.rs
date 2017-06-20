@@ -19,7 +19,7 @@ use command;
 use cvar;
 use dl;
 use encode;
-use engine::Engine;
+use engine::{Engine, MainThreadVar};
 use errors::*;
 use sdl;
 
@@ -65,13 +65,11 @@ struct Pointers {
     window_rect: *mut RECT,
 }
 
-unsafe impl Send for Pointers {}
-unsafe impl Sync for Pointers {}
-
-static mut CAPTURE_SOUND: bool = false;
-static mut SOUND_REMAINDER: f64 = 0f64;
-static mut SOUND_CAPTURE_MODE: SoundCaptureMode = SoundCaptureMode::Normal;
-static mut INSIDE_KEY_EVENT: bool = false;
+static mut CAPTURE_SOUND: MainThreadVar<bool> = MainThreadVar { var: false };
+static mut SOUND_REMAINDER: MainThreadVar<f64> = MainThreadVar { var: 0f64 };
+static mut SOUND_CAPTURE_MODE: MainThreadVar<SoundCaptureMode> =
+    MainThreadVar { var: SoundCaptureMode::Normal };
+static mut INSIDE_KEY_EVENT: MainThreadVar<bool> = MainThreadVar { var: false };
 static KERNEL_SRC: &str = r#"
     __kernel void increase_blue(read_only image2d_t src_image,
                                 write_only image2d_t dst_image) {
@@ -205,7 +203,7 @@ pub unsafe extern "C" fn CL_Disconnect() {
 pub unsafe extern "C" fn Con_ToggleConsole_f() {
     let mut engine = Engine::new();
 
-    if !INSIDE_KEY_EVENT ||
+    if !INSIDE_KEY_EVENT.get(&engine) ||
         cap_allow_tabbing_out_in_demos.parse(&mut engine)
                                       .unwrap_or(0) == 0
     {
@@ -244,9 +242,10 @@ pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
 /// Handles key callbacks.
 #[no_mangle]
 pub unsafe extern "C" fn Key_Event(key: c_int, down: c_int) {
-    INSIDE_KEY_EVENT = true;
+    let engine = Engine::new();
+    *INSIDE_KEY_EVENT.get_mut(&engine) = true;
     real!(Key_Event)(key, down);
-    INSIDE_KEY_EVENT = false;
+    *INSIDE_KEY_EVENT.get_mut(&engine) = false;
 }
 
 /// Initializes the hunk memory.
@@ -276,28 +275,28 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// Mixes sound into the output buffer using the paintbuffer.
 #[no_mangle]
 pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
+    let engine = Engine::new();
+
     if !capture::is_capturing() {
-        CAPTURE_SOUND = false;
+        *CAPTURE_SOUND.get_mut(&engine) = false;
         real!(S_PaintChannels)(endtime);
         return;
     }
 
-    if CAPTURE_SOUND {
-        let engine = Engine::new();
-
+    if *CAPTURE_SOUND.get(&engine) {
         let paintedtime = *ptr!(paintedtime);
-        let frametime = match SOUND_CAPTURE_MODE {
+        let frametime = match *SOUND_CAPTURE_MODE.get(&engine) {
             SoundCaptureMode::Normal => *ptr!(host_frametime),
             SoundCaptureMode::Remaining => capture::get_capture_parameters(&engine).sound_extra,
         };
         let speed = (**ptr!(shm)).speed;
-        let samples = frametime * speed as f64 + SOUND_REMAINDER;
-        let samples_rounded = match SOUND_CAPTURE_MODE {
+        let samples = frametime * speed as f64 + SOUND_REMAINDER.get(&engine);
+        let samples_rounded = match *SOUND_CAPTURE_MODE.get(&engine) {
             SoundCaptureMode::Normal => samples.floor(),
             SoundCaptureMode::Remaining => samples.ceil(),
         };
 
-        SOUND_REMAINDER = samples - samples_rounded;
+        *SOUND_REMAINDER.get_mut(&engine) = samples - samples_rounded;
 
         AUDIO_BUFFER.with(|b| {
                               let mut buf = capture::get_audio_buffer(&engine);
@@ -309,14 +308,15 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
 
         AUDIO_BUFFER.with(|b| capture::capture_audio(&engine, b.borrow_mut().take().unwrap()));
 
-        CAPTURE_SOUND = false;
+        *CAPTURE_SOUND.get_mut(&engine) = false;
     }
 }
 
 /// Transfers the contents of the paintbuffer into the output buffer.
 #[no_mangle]
 pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
-    if CAPTURE_SOUND {
+    let engine = Engine::new();
+    if *CAPTURE_SOUND.get(&engine) {
         AUDIO_BUFFER.with(|b| {
             let mut buf = b.borrow_mut();
             let mut buf = buf.as_mut().unwrap().data_mut();
@@ -522,7 +522,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                                                p.borrow_mut().as_mut().unwrap().stop(false).unwrap()
                                            });
 
-        CAPTURE_SOUND = true;
+        *CAPTURE_SOUND.get_mut(&engine) = true;
     }
 
     real!(Sys_VID_FlipScreen)();
@@ -674,19 +674,19 @@ unsafe fn get_resolution() -> (u32, u32) {
 }
 
 /// Resets the sound capture remainder.
-pub fn reset_sound_capture_remainder(_: &Engine) {
+pub fn reset_sound_capture_remainder(engine: &Engine) {
     unsafe {
-        SOUND_REMAINDER = 0f64;
+        *SOUND_REMAINDER.get_mut(engine) = 0f64;
     }
 }
 
 /// Captures the remaining and extra sound.
-pub fn capture_remaining_sound(_: &Engine) {
+pub fn capture_remaining_sound(engine: &Engine) {
     unsafe {
-        SOUND_CAPTURE_MODE = SoundCaptureMode::Remaining;
-        CAPTURE_SOUND = true;
+        *SOUND_CAPTURE_MODE.get_mut(engine) = SoundCaptureMode::Remaining;
+        *CAPTURE_SOUND.get_mut(engine) = true;
         S_PaintChannels(0);
-        SOUND_CAPTURE_MODE = SoundCaptureMode::Normal;
+        *SOUND_CAPTURE_MODE.get_mut(engine) = SoundCaptureMode::Normal;
     }
 }
 

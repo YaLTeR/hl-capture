@@ -9,7 +9,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
 
 use encode::{Encoder, EncoderParameters};
-use engine::Engine;
+use engine::{Engine, MainThreadVar};
 use errors::*;
 use hooks::hw;
 use profiler::*;
@@ -36,7 +36,8 @@ thread_local! {
     // pub static CAPTURE_THREAD_PROFILER: RefCell<Option<Profiler>> = RefCell::new(None);
 }
 
-static mut CAPTURE_PARAMETERS: Option<CaptureParameters> = None;
+static mut CAPTURE_PARAMETERS: MainThreadVar<Option<CaptureParameters>> =
+    MainThreadVar { var: None };
 
 pub struct CaptureParameters {
     pub sound_extra: f64,
@@ -338,8 +339,8 @@ pub fn is_capturing() -> bool {
     *CAPTURING.read().unwrap()
 }
 
-pub fn get_capture_parameters(_: &Engine) -> &CaptureParameters {
-    unsafe { CAPTURE_PARAMETERS.as_ref().unwrap() }
+pub fn get_capture_parameters(engine: &Engine) -> &CaptureParameters {
+    unsafe { CAPTURE_PARAMETERS.get(engine).as_ref().unwrap() }
 }
 
 pub fn stop(engine: &Engine) {
@@ -452,7 +453,7 @@ command!(cap_start, |mut engine| {
     };
 
     unsafe {
-        CAPTURE_PARAMETERS = match parse_capture_parameters(&mut engine) {
+        *CAPTURE_PARAMETERS.get_mut(&engine) = match parse_capture_parameters(&mut engine) {
             Ok(p) => Some(p),
             Err(ref e) => {
                 engine.con_print(&format!("{}", e.display()));

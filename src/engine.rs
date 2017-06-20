@@ -10,6 +10,7 @@ use hooks::hw;
 ///
 /// It's used for exposing safe interfaces for these functions where they can be used safely
 /// (for example, in console command handlers).
+// Don't implement Clone/Copy, this will break EngineCVarGuard static guarantee.
 pub struct Engine {
     /// This field serves two purposes:
     /// firstly, it prevents creating the struct not via the unsafe new() method,
@@ -23,6 +24,16 @@ pub struct EngineCVarGuard<'a> {
     engine_cvar: &'a mut cvar_t,
     _borrow_guard: &'a mut Engine,
 }
+
+/// Holder for a variable that should only be accessible from the main game thread.
+pub struct MainThreadVar<T> {
+    /// This field has to be public because there's no const fn.
+    /// It shouldn't be accessed manually.
+    pub var: T,
+}
+
+unsafe impl<T> Send for MainThreadVar<T> {}
+unsafe impl<T> Sync for MainThreadVar<T> {}
 
 impl Engine {
     /// Creates an instance of Engine.
@@ -90,5 +101,17 @@ impl<'a> Deref for EngineCVarGuard<'a> {
 impl<'a> DerefMut for EngineCVarGuard<'a> {
     fn deref_mut(&mut self) -> &mut cvar_t {
         self.engine_cvar
+    }
+}
+
+impl<T> MainThreadVar<T> {
+    /// Retrieves a reference to the stored variable.
+    pub fn get(&self, _: &Engine) -> &T {
+        &self.var
+    }
+
+    /// Retrieves a mutable reference to the stored variable.
+    pub fn get_mut(&mut self, _: &Engine) -> &mut T {
+        &mut self.var
     }
 }
