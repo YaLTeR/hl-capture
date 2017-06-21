@@ -59,6 +59,8 @@ pub struct VideoBuffer {
     height: u32,
     format: format::Pixel,
     components: u8,
+    frame: VideoFrame,
+    data_is_in_frame: bool,
 }
 
 pub struct AudioBuffer {
@@ -86,6 +88,8 @@ impl VideoBuffer {
             height: 0,
             format: format::Pixel::RGB24,
             components: format::Pixel::RGB24.descriptor().unwrap().nb_components(),
+            frame: VideoFrame::empty(),
+            data_is_in_frame: false,
         }
     }
 
@@ -97,8 +101,6 @@ impl VideoBuffer {
                      width,
                      height);
 
-            self.data
-                .resize((width * height * self.components as u32) as usize, 0);
             self.width = width;
             self.height = height;
         }
@@ -112,47 +114,67 @@ impl VideoBuffer {
             self.components = format.descriptor()
                                     .expect("invalid pixel format")
                                     .nb_components();
-            self.data
-                .resize((self.width * self.height * self.components as u32) as usize,
-                        0);
         }
     }
 
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        self.data_is_in_frame = false;
+        self.data
+            .resize((self.width * self.height * self.components as u32) as usize,
+                    0);
+
         self.data.as_mut_slice()
     }
 
+    pub fn get_frame(&mut self) -> &mut VideoFrame {
+        self.data_is_in_frame = true;
+
+        if self.width != self.frame.width() || self.height != self.frame.height() ||
+            self.format != self.frame.format()
+        {
+            self.frame = VideoFrame::new(self.format, self.width, self.height);
+        }
+
+        &mut self.frame
+    }
+
     pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
-        // Make sure frame is of correct size.
+        // Make sure the frame is of correct size.
         if self.width != frame.width() || self.height != frame.height() ||
             self.format != frame.format()
         {
             *frame = VideoFrame::new(self.format, self.width, self.height);
         }
 
-        // Copy the pixel data into the frame.
-        let mut offset = 0;
-        let components_per_plane = if frame.planes() == 1 {
-            self.components
+        if self.data_is_in_frame {
+            for i in 0..frame.planes() {
+                frame.data_mut(i).copy_from_slice(self.frame.data(i));
+            }
         } else {
-            1
-        } as usize;
+            let mut offset = 0;
+            let components_per_plane = if frame.planes() == 1 {
+                self.components
+            } else {
+                1
+            } as usize;
 
-        for i in 0..frame.planes() {
-            let stride = frame.stride(i);
-            let plane_width = frame.plane_width(i) as usize;
-            let plane_height = frame.plane_height(i) as usize;
+            for i in 0..frame.planes() {
+                let stride = frame.stride(i);
+                let plane_width = frame.plane_width(i) as usize;
+                let plane_height = frame.plane_height(i) as usize;
 
-            let mut plane_data = frame.data_mut(i);
-            for y in 0..plane_height {
-                unsafe {
-                    ptr::copy_nonoverlapping(self.data.as_ptr().offset(offset),
-                                             plane_data.as_mut_ptr()
-                                                       .offset(((plane_height - y - 1) * stride) as
-                                                                   isize),
-                                             plane_width * components_per_plane);
+                let mut plane_data = frame.data_mut(i);
+                for y in 0..plane_height {
+                    unsafe {
+                        ptr::copy_nonoverlapping(self.data.as_ptr().offset(offset),
+                                                 plane_data.as_mut_ptr()
+                                                           .offset(((plane_height - y - 1) *
+                                                                        stride) as
+                                                                       isize),
+                                                 plane_width * components_per_plane);
+                    }
+                    offset += (plane_width * components_per_plane) as isize;
                 }
-                offset += (plane_width * components_per_plane) as isize;
             }
         }
     }

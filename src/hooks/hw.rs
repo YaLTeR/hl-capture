@@ -404,41 +404,45 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                     if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
                         // TODO
                         buf.set_format(format::Pixel::YUV444P);
+                        let mut frame = buf.get_frame();
 
-                        let ocl_buf = ocl::Buffer::<u8>::builder().queue(pro_que.queue().clone())
+                        let Y_buf = ocl::Buffer::<u8>::builder()
+                            .queue(pro_que.queue().clone())
                             .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                            .dims(w * h * 3)
-                            // .host_data(buf.as_mut_slice())
+                            .dims(frame.data(0).len())
                             .build()
                             .expect("Buffer build");
-
-                        // let dst_image = ocl::Image::<u8>::builder()
-                        //     .channel_order(ocl::enums::ImageChannelOrder::Rgba)
-                        //     .channel_data_type(ocl::enums::ImageChannelDataType::UnormInt8)
-                        //     .image_type(ocl::enums::MemObjectType::Image2d)
-                        //     .dims((w, h))
-                        //     .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
-                        //     .queue(pro_que.queue().clone())
-                        //     .build()
-                        //     .expect("Image build");
+                        let U_buf = ocl::Buffer::<u8>::builder()
+                            .queue(pro_que.queue().clone())
+                            .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                            .dims(frame.data(1).len())
+                            .build()
+                            .expect("Buffer build");
+                        let V_buf = ocl::Buffer::<u8>::builder()
+                            .queue(pro_que.queue().clone())
+                            .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                            .dims(frame.data(2).len())
+                            .build()
+                            .expect("Buffer build");
 
                         let kernel = pro_que.create_kernel("rgb_to_yuv444_601_limited")
                                             .unwrap()
                                             .gws((w, h))
                                             .arg_img(&image)
-                                            .arg_buf(&ocl_buf);
+                                            .arg_scl(frame.stride(0))
+                                            .arg_scl(frame.stride(1))
+                                            .arg_scl(frame.stride(2))
+                                            .arg_buf(&Y_buf)
+                                            .arg_buf(&U_buf)
+                                            .arg_buf(&V_buf);
 
                         kernel.enq().expect("kernel.enq()");
 
                         // pro_que.finish().expect("pro_que.finish()");
 
-                        ocl_buf.read(buf.as_mut_slice())
-                               .enq()
-                               .expect("ocl_buf.read()");
-
-                    // dst_image.read(buf.as_mut_slice())
-                    //          .enq()
-                    //          .expect("dst_image.read()");
+                        Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
+                        U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
+                        V_buf.read(frame.data_mut(2)).enq().expect("V_buf.read()");
                     } else {
                         buf.set_format(format::Pixel::RGBA);
 

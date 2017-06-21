@@ -295,25 +295,25 @@ impl Encoder {
            })
     }
 
-    fn push_frame(&mut self, frame: &mut Option<&mut frame::Video>) -> Result<()> {
-        let frame = frame.as_mut()
-                         .map(|x| &mut **x)
-                         .unwrap_or(self.converter.output_frame().unwrap());
+    fn push_frame(&mut self, frame: Option<&mut frame::Video>, times: usize) -> Result<()> {
+        let frame = frame.or(self.converter.output_frame()).unwrap();
 
-        frame.set_pts(Some(self.video_pts));
-        self.video_pts += 1;
+        for _ in 0..times {
+            frame.set_pts(Some(self.video_pts));
+            self.video_pts += 1;
 
-        if self.video_encoder
-               .encode(&frame, &mut self.packet)
-               .chain_err(|| "could not encode the video frame")?
-        {
-            self.packet
-                .rescale_ts(self.time_base, self.video_stream_time_base);
-            self.packet.set_stream(self.video_stream_index);
+            if self.video_encoder
+                   .encode(&frame, &mut self.packet)
+                   .chain_err(|| "could not encode the video frame")?
+            {
+                self.packet
+                    .rescale_ts(self.time_base, self.video_stream_time_base);
+                self.packet.set_stream(self.video_stream_index);
 
-            self.packet
-                .write_interleaved(&mut self.context)
-                .chain_err(|| "could not write the video packet")?;
+                self.packet
+                    .write_interleaved(&mut self.context)
+                    .chain_err(|| "could not write the video packet")?;
+            }
         }
 
         Ok(())
@@ -346,16 +346,14 @@ impl Encoder {
             panic!("the given frame's size doesn't match the encoder frame size");
         }
 
-        let mut input = if frame.format() != self.format() {
+        let input = if frame.format() != self.format() {
             self.converter.convert(frame)?;
             None
         } else {
             Some(frame)
         };
 
-        for _ in 0..times {
-            self.push_frame(&mut input)?;
-        }
+        self.push_frame(input, times)?;
 
         Ok(())
     }
