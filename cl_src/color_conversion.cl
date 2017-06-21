@@ -36,6 +36,30 @@ __kernel void rgb_to_yuv420_601_limited(read_only image2d_t src_image,
 	Y_buf[(h - coords.y - 1) * Y_stride + coords.x] = round(Y);
 
 	if ((coords.x & 1) == 0 && (coords.y & 1) == 0) {
+		// Average the 4 pixel values for better results.
+		int w = get_image_width(src_image);
+		float4 top_right, bottom_left, bottom_right;
+
+		if (coords.x + 1 < w) {
+			top_right = read_imagef(src_image, coords + (int2)(1, 0));
+		} else {
+			top_right = pixel;
+		}
+
+		if (coords.y + 1 < h) {
+			bottom_left = read_imagef(src_image, coords + (int2)(0, 1));
+		} else {
+			bottom_left = pixel;
+		}
+
+		if (coords.x + 1 < w && coords.y + 1 < h) {
+			bottom_right = read_imagef(src_image, coords + (int2)(1, 1));
+		} else {
+			bottom_right = pixel;
+		}
+
+		pixel = (pixel + top_right + bottom_left + bottom_right) / (float4)(4.0, 4.0, 4.0, 4.0);
+
 		coords.x >>= 1;
 		coords.y >>= 1;
 

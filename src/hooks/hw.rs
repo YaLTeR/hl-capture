@@ -634,6 +634,7 @@ pub fn capture_remaining_sound(engine: &Engine) {
 fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
     if engine.data().pro_que.is_none() {
         let report_opencl_error = |ref e: Error| {
+            println!("{}", e.display());
             engine.con_print(&format!("Could not initialize OpenCL, proceeding without it.\
                                            Error details: {}",
                                       e.display()));
