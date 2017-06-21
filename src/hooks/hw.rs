@@ -432,11 +432,13 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
                         // pro_que.finish().expect("pro_que.finish()");
 
-                        ocl_buf.read(buf.as_mut_slice()).enq().expect("ocl_buf.read()");
+                        ocl_buf.read(buf.as_mut_slice())
+                               .enq()
+                               .expect("ocl_buf.read()");
 
-                        // dst_image.read(buf.as_mut_slice())
-                        //          .enq()
-                        //          .expect("dst_image.read()");
+                    // dst_image.read(buf.as_mut_slice())
+                    //          .enq()
+                    //          .expect("dst_image.read()");
                     } else {
                         buf.set_format(format::Pixel::RGBA);
 

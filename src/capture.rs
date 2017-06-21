@@ -97,10 +97,8 @@ impl VideoBuffer {
                      width,
                      height);
 
-            self.data.resize((width * height *
-                                  self.components as u32) as
-                                 usize,
-                             0);
+            self.data
+                .resize((width * height * self.components as u32) as usize, 0);
             self.width = width;
             self.height = height;
         }
@@ -111,11 +109,12 @@ impl VideoBuffer {
             println!("Changing format from {:?} to {:?}", self.format, format);
 
             self.format = format;
-            self.components = format.descriptor().expect("invalid pixel format").nb_components();
-            self.data.resize((self.width * self.height *
-                              self.components as
-                                      u32) as usize,
-                             0);
+            self.components = format.descriptor()
+                                    .expect("invalid pixel format")
+                                    .nb_components();
+            self.data
+                .resize((self.width * self.height * self.components as u32) as usize,
+                        0);
         }
     }
 
@@ -125,7 +124,9 @@ impl VideoBuffer {
 
     pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
         // Make sure frame is of correct size.
-        if self.width != frame.width() || self.height != frame.height() || self.format != frame.format() {
+        if self.width != frame.width() || self.height != frame.height() ||
+            self.format != frame.format()
+        {
             *frame = VideoFrame::new(self.format, self.width, self.height);
         }
 
@@ -146,24 +147,14 @@ impl VideoBuffer {
             for y in 0..plane_height {
                 unsafe {
                     ptr::copy_nonoverlapping(self.data.as_ptr().offset(offset),
-                        plane_data.as_mut_ptr().offset(((plane_height - y - 1) * stride) as isize),
-                        plane_width * components_per_plane);
+                                             plane_data.as_mut_ptr()
+                                                       .offset(((plane_height - y - 1) * stride) as
+                                                                   isize),
+                                             plane_width * components_per_plane);
                 }
                 offset += (plane_width * components_per_plane) as isize;
             }
         }
-
-        // let stride = frame.stride(0) as u32;
-        // let mut data = frame.data_mut(0);
-        //
-        // for y in 0..self.height {
-        //     unsafe {
-        //         ptr::copy_nonoverlapping(self.data.as_ptr().offset((y * self.width * self.components as u32) as isize),
-        //                                  data.as_mut_ptr()
-        //                                      .offset(((self.height - y - 1) * stride) as isize),
-        //                                  (self.width * self.components as u32) as usize);
-        //     }
-        // }
     }
 }
 
