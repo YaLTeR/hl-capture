@@ -403,7 +403,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
                     if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
                         // TODO
-                        buf.set_format(format::Pixel::YUV444P);
+                        buf.set_format(format::Pixel::YUV420P);
                         let mut frame = buf.get_frame();
 
                         let Y_buf = ocl::Buffer::<u8>::builder()
@@ -425,7 +425,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                             .build()
                             .expect("Buffer build");
 
-                        let kernel = pro_que.create_kernel("rgb_to_yuv444_601_limited")
+                        let kernel = pro_que.create_kernel("rgb_to_yuv420_601_limited")
                                             .unwrap()
                                             .gws((w, h))
                                             .arg_img(&image)
