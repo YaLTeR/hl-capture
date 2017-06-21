@@ -15,6 +15,7 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer = MainThreadDataContainer {
         inside_key_event: false,
         time_interpolator: None,
         encoder_pixel_format: None,
+        pro_que: None,
     },
 };
 
@@ -27,6 +28,7 @@ pub struct MainThreadData {
     pub inside_key_event: bool,
     pub time_interpolator: Option<::capture::TimeInterpolator>,
     pub encoder_pixel_format: Option<::ffmpeg::format::Pixel>,
+    pub pro_que: Option<Option<*mut ::ocl::ProQue>>,
 }
 
 /// A Send+Sync container to allow putting `MainThreadData` into a global variable.

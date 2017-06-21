@@ -490,7 +490,7 @@ impl PixFmtConverter {
     }
 
     fn convert(&mut self, frame: &frame::Video) -> Result<&mut frame::Video> {
-        if self.inner.is_none() {
+        if self.inner.is_none() || self.inner.as_ref().unwrap().format() != frame.format() {
             self.inner = Some(PixFmtConverterInner::new((frame.width(), frame.height()),
                                                         frame.format(),
                                                         self.output_format)?);
@@ -522,6 +522,10 @@ impl PixFmtConverterInner {
             .chain_err(|| "could not convert the frame to the correct color format")?;
 
         Ok(&mut self.output_frame)
+    }
+
+    fn format(&self) -> format::Pixel {
+        self.context.input().format
     }
 }
 

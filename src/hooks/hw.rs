@@ -68,15 +68,6 @@ struct Pointers {
 
 thread_local! {
     static AUDIO_BUFFER: RefCell<Option<capture::AudioBuffer>> = RefCell::new(None);
-    static PROQUE: ocl::ProQue = ocl::ProQue::builder()
-        .context(ocl::Context::builder()
-                 .gl_context(sdl::get_current_context())
-                 .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
-                 .build()
-                 .expect("Context build()"))
-        .src(include_str!("../../cl_src/color_conversion.cl"))
-        .build()
-        .expect("ProQue build()");
 }
 
 pub enum SoundCaptureMode {
@@ -163,6 +154,10 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                     postRestartCmdLineArgs,
                                     launcherFactory,
                                     filesystemFactory);
+
+    if let Some(Some(pro_que)) = engine.data().pro_que.take() {
+        drop(Box::from_raw(pro_que));
+    }
 
     // Since hw.so is getting unloaded, reset all pointers.
     reset_pointers();
@@ -372,85 +367,87 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         // If frames is zero, we need to skip this frame.
         if frames > 0 {
             let (w, h) = get_resolution(&engine);
-
             let mut buf = capture::get_buffer(&engine, (w, h));
 
             let texture = (*ptr!(s_BackBufferFBO)).Tex;
-            if texture != 0 {
+            let pro_que = if texture != 0 {
+                get_pro_que(&engine)
+            } else {
+                None
+            };
+
+            if pro_que.is_some() {
+                let pro_que = pro_que.unwrap();
+
                 gl::Finish();
 
-                PROQUE.with(|pro_que| {
-                    let descr =
-                        ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
-                                                            w as usize,
-                                                            h as usize,
-                                                            1,
-                                                            1,
-                                                            0,
-                                                            0,
-                                                            None);
+                let descr = ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
+                                                                w as usize,
+                                                                h as usize,
+                                                                1,
+                                                                1,
+                                                                0,
+                                                                0,
+                                                                None);
 
-                    let image =
-                        ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
-                                                          ocl::flags::MEM_READ_ONLY,
-                                                          descr,
-                                                          ocl::core::GlTextureTarget::GlTexture2d,
-                                                          0,
-                                                          texture)
-                        .expect("ocl::Image::from_gl_texture()");
+                let image =
+                    ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
+                                                      ocl::flags::MEM_READ_ONLY,
+                                                      descr,
+                                                      ocl::core::GlTextureTarget::GlTexture2d,
+                                                      0,
+                                                      texture)
+                    .expect("ocl::Image::from_gl_texture()");
 
-                    image.cmd().gl_acquire().enq().expect("gl_acquire()");
+                image.cmd().gl_acquire().enq().expect("gl_acquire()");
 
-                    if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
-                        // TODO
-                        buf.set_format(format::Pixel::YUV420P);
-                        let mut frame = buf.get_frame();
+                if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
+                    buf.set_format(format::Pixel::YUV420P);
+                    let mut frame = buf.get_frame();
 
-                        let Y_buf = ocl::Buffer::<u8>::builder()
-                            .queue(pro_que.queue().clone())
-                            .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                            .dims(frame.data(0).len())
-                            .build()
-                            .expect("Buffer build");
-                        let U_buf = ocl::Buffer::<u8>::builder()
-                            .queue(pro_que.queue().clone())
-                            .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                            .dims(frame.data(1).len())
-                            .build()
-                            .expect("Buffer build");
-                        let V_buf = ocl::Buffer::<u8>::builder()
-                            .queue(pro_que.queue().clone())
-                            .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                            .dims(frame.data(2).len())
-                            .build()
-                            .expect("Buffer build");
+                    let Y_buf = ocl::Buffer::<u8>::builder()
+                        .queue(pro_que.queue().clone())
+                        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                        .dims(frame.data(0).len())
+                        .build()
+                        .expect("Buffer build");
+                    let U_buf = ocl::Buffer::<u8>::builder()
+                        .queue(pro_que.queue().clone())
+                        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                        .dims(frame.data(1).len())
+                        .build()
+                        .expect("Buffer build");
+                    let V_buf = ocl::Buffer::<u8>::builder()
+                        .queue(pro_que.queue().clone())
+                        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                        .dims(frame.data(2).len())
+                        .build()
+                        .expect("Buffer build");
 
-                        let kernel = pro_que.create_kernel("rgb_to_yuv420_601_limited")
-                                            .unwrap()
-                                            .gws((w, h))
-                                            .arg_img(&image)
-                                            .arg_scl(frame.stride(0))
-                                            .arg_scl(frame.stride(1))
-                                            .arg_scl(frame.stride(2))
-                                            .arg_buf(&Y_buf)
-                                            .arg_buf(&U_buf)
-                                            .arg_buf(&V_buf);
+                    let kernel = pro_que.create_kernel("rgb_to_yuv420_601_limited")
+                                        .unwrap()
+                                        .gws((w, h))
+                                        .arg_img(&image)
+                                        .arg_scl(frame.stride(0))
+                                        .arg_scl(frame.stride(1))
+                                        .arg_scl(frame.stride(2))
+                                        .arg_buf(&Y_buf)
+                                        .arg_buf(&U_buf)
+                                        .arg_buf(&V_buf);
 
-                        kernel.enq().expect("kernel.enq()");
+                    kernel.enq().expect("kernel.enq()");
 
-                        // pro_que.finish().expect("pro_que.finish()");
+                    Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
+                    U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
+                    V_buf.read(frame.data_mut(2)).enq().expect("V_buf.read()");
+                } else {
+                    buf.set_format(format::Pixel::RGBA);
 
-                        Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
-                        U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
-                        V_buf.read(frame.data_mut(2)).enq().expect("V_buf.read()");
-                    } else {
-                        buf.set_format(format::Pixel::RGBA);
+                    image.read(buf.as_mut_slice()).enq().expect("image.read()");
+                }
 
-                        image.read(buf.as_mut_slice()).enq().expect("image.read()");
-                    }
-
-                    image.cmd().gl_release().enq().expect("gl_release()");
-                });
+                image.cmd().gl_release().enq().expect("gl_release()");
+                pro_que.finish().expect("pro_que.finish()");
             } else {
                 buf.set_format(format::Pixel::RGB24);
 
@@ -631,6 +628,43 @@ pub fn capture_remaining_sound(engine: &Engine) {
         S_PaintChannels(0);
     }
     engine.data().sound_capture_mode = SoundCaptureMode::Normal;
+}
+
+/// Returns the ocl `ProCue`.
+fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
+    if engine.data().pro_que.is_none() {
+        let report_opencl_error = |ref e: Error| {
+            engine.con_print(&format!("Could not initialize OpenCL, proceeding without it.\
+                                           Error details: {}",
+                                      e.display()));
+        };
+
+        let context = ocl::Context::builder()
+            .gl_context(sdl::get_current_context())
+            .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
+            .build()
+            .chain_err(|| "error building ocl::Context");
+
+        let pro_que = context.and_then(|ctx| {
+            ocl::ProQue::builder()
+                .context(ctx)
+                .src(include_str!("../../cl_src/color_conversion.cl"))
+                .build()
+                .chain_err(|| "error building ocl::ProQue")
+        })
+                             .map(|pro_que| Box::into_raw(Box::new(pro_que)))
+                             .map_err(report_opencl_error)
+                             .ok();
+
+        engine.data().pro_que = Some(pro_que);
+    }
+
+    engine.data()
+          .pro_que
+          .as_mut()
+          .unwrap()
+          .as_mut()
+          .map(|ptr| unsafe { ptr.as_mut() }.unwrap())
 }
 
 cvar!(cap_allow_tabbing_out_in_demos, "1");
