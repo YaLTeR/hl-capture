@@ -636,7 +636,8 @@ fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
         let report_opencl_error = |ref e: Error| {
             engine.con_print(&format!("Could not initialize OpenCL, proceeding without it. \
                                            Error details:\n{}",
-                                      e.display()).replace('\0', "\\x00"));
+                                      e.display())
+                              .replace('\0', "\\x00"));
         };
 
         let context = ocl::Context::builder()

@@ -2,7 +2,6 @@ use error_chain::ChainedError;
 use ffmpeg::{Rational, format};
 use ffmpeg::frame::Video as VideoFrame;
 use std::ops::Deref;
-use std::ptr;
 use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::thread;
@@ -165,15 +164,13 @@ impl VideoBuffer {
 
                 let mut plane_data = frame.data_mut(i);
                 for y in 0..plane_height {
-                    unsafe {
-                        ptr::copy_nonoverlapping(self.data.as_ptr().offset(offset),
-                                                 plane_data.as_mut_ptr()
-                                                           .offset(((plane_height - y - 1) *
-                                                                        stride) as
-                                                                       isize),
-                                                 plane_width * components_per_plane);
-                    }
-                    offset += (plane_width * components_per_plane) as isize;
+                    let plane_data_start = (plane_height - y - 1) * stride;
+                    let length = plane_width * components_per_plane;
+
+                    plane_data[plane_data_start..plane_data_start + length]
+                        .copy_from_slice(&self.data[offset..offset + length]);
+
+                    offset += length;
                 }
             }
         }
