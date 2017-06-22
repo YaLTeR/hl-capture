@@ -568,9 +568,9 @@ pub unsafe fn register_variable(cvar: &mut cvar::cvar_t) {
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
 pub unsafe fn con_print(string: &str) {
-    real!(Con_Printf)(CString::new(string.replace('%', "%%"))
-                          .expect("string cannot contain null bytes")
-                          .as_ptr())
+    let cstring = CString::new(string.replace('%', "%%"))
+        .expect("string cannot contain null bytes");
+    real!(Con_Printf)(cstring.as_ptr())
 }
 
 /// Gets the console command argument count.
