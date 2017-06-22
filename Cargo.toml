@@ -23,8 +23,7 @@ glx = "0.1"
 ocl = { git = "https://github.com/YaLTeR/ocl.git", branch = "glx-sharing" }
 
 [dependencies.ffmpeg]
-git = "https://github.com/yalter/rust-ffmpeg.git"
-branch = "plane-size-fix"
+git = "https://github.com/meh/rust-ffmpeg.git"
 # path = "../rust-ffmpeg"
 default-features = false
 features = ["codec", "format", "software-resampling", "software-scaling"]
