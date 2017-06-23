@@ -691,9 +691,11 @@ fn build_yuv_buffers<'a>(engine: &Engine,
     let U_buf = build_ocl_buffer(engine, pro_que, U_len);
     let V_buf = build_ocl_buffer(engine, pro_que, V_len);
 
-    Y_buf.and_then(|Y| U_buf.map(|U| (Y, U)))
-         .and_then(|(Y, U)| V_buf.map(|V| (Y, U, V)))
-         .map(|YUV| Box::into_raw(Box::new(YUV)))
+    if let (Some(Y_buf), Some(U_buf), Some(V_buf)) = (Y_buf, U_buf, V_buf) {
+        Some(Box::into_raw(Box::new((Y_buf, U_buf, V_buf))))
+    } else {
+        None
+    }
 }
 
 /// Returns the ocl buffers for Y, U and V.
