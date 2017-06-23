@@ -44,7 +44,13 @@ struct Functions {
     Con_Printf: unsafe extern "C" fn(*const c_char),
     Con_ToggleConsole_f: unsafe extern "C" fn(),
     Cvar_RegisterVariable: unsafe extern "C" fn(*mut cvar::cvar_t),
-    GL_EndRendering: unsafe extern "C" fn(),
+    GL_SetMode: unsafe extern "C" fn(c_int,
+                                     *mut c_void,
+                                     *mut c_void,
+                                     c_int,
+                                     *const c_char,
+                                     *const c_char)
+                                     -> c_int,
     Host_FilterTime: unsafe extern "C" fn(c_float) -> c_int,
     Key_Event: unsafe extern "C" fn(key: c_int, down: c_int),
     Memory_Init: unsafe extern "C" fn(*mut c_void, c_int),
@@ -196,10 +202,16 @@ pub unsafe extern "C" fn Con_ToggleConsole_f() {
     }
 }
 
-/// Blits the FBOs onto the backbuffer and flips.
+/// Sets up the main FBOs and the display mode.
 #[no_mangle]
-pub unsafe extern "C" fn GL_EndRendering() {
-    real!(GL_EndRendering)();
+pub unsafe extern "C" fn GL_SetMode(mainwindow: c_int,
+                                    pmaindc: *mut c_void,
+                                    pbaseRC: *mut c_void,
+                                    fD3D: c_int,
+                                    pszDriver: *const c_char,
+                                    pszCmdLine: *const c_char)
+                                    -> c_int {
+    real!(GL_SetMode)(mainwindow, pmaindc, pbaseRC, fD3D, pszDriver, pszCmdLine)
 }
 
 /// Calculates the frame time and limits the FPS.
@@ -472,6 +484,12 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     // TODO: check if we're called from SCR_UpdateScreen().
 }
 
+/// Returns whether the game is running in windowed mode.
+#[no_mangle]
+pub unsafe fn VideoMode_IsWindowed() -> c_int {
+    real!(VideoMode_IsWindowed)()
+}
+
 /// Obtains and stores all necessary function and variable addresses.
 ///
 /// # Safety
@@ -490,7 +508,7 @@ unsafe fn refresh_pointers() -> Result<()> {
                          Con_Printf: find!(hw, "Con_Printf"),
                          Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
                          Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
-                         GL_EndRendering: find!(hw, "GL_EndRendering"),
+                         GL_SetMode: find!(hw, "GL_SetMode"),
                          Host_FilterTime: find!(hw, "Host_FilterTime"),
                          Key_Event: find!(hw, "Key_Event"),
                          Memory_Init: find!(hw, "Memory_Init"),
