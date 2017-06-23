@@ -155,6 +155,10 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                     launcherFactory,
                                     filesystemFactory);
 
+    if let Some(Some(buffers)) = engine.data().ocl_yuv_buffers.take() {
+        drop(Box::from_raw(buffers));
+    }
+
     if let Some(Some(pro_que)) = engine.data().pro_que.take() {
         drop(Box::from_raw(pro_que));
     }
@@ -401,28 +405,23 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 
                 image.cmd().gl_acquire().enq().expect("gl_acquire()");
 
-                if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
+                let yuv_buffers = if engine.data().encoder_pixel_format.unwrap() ==
+                    format::Pixel::YUV420P
+                {
                     buf.set_format(format::Pixel::YUV420P);
+                    let frame = buf.get_frame();
+
+                    get_yuv_buffers(&engine,
+                                    pro_que,
+                                    (frame.data(0).len(), frame.data(1).len(), frame.data(2).len()))
+                } else {
+                    None
+                };
+
+                if yuv_buffers.is_some() {
                     let mut frame = buf.get_frame();
 
-                    let Y_buf = ocl::Buffer::<u8>::builder()
-                        .queue(pro_que.queue().clone())
-                        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                        .dims(frame.data(0).len())
-                        .build()
-                        .expect("Buffer build");
-                    let U_buf = ocl::Buffer::<u8>::builder()
-                        .queue(pro_que.queue().clone())
-                        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                        .dims(frame.data(1).len())
-                        .build()
-                        .expect("Buffer build");
-                    let V_buf = ocl::Buffer::<u8>::builder()
-                        .queue(pro_que.queue().clone())
-                        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                        .dims(frame.data(2).len())
-                        .build()
-                        .expect("Buffer build");
+                    let &mut (ref Y_buf, ref U_buf, ref V_buf) = yuv_buffers.unwrap();
 
                     let kernel = pro_que.create_kernel("rgb_to_yuv420_601_limited")
                                         .unwrap()
@@ -431,9 +430,9 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
                                         .arg_scl(frame.stride(0))
                                         .arg_scl(frame.stride(1))
                                         .arg_scl(frame.stride(2))
-                                        .arg_buf(&Y_buf)
-                                        .arg_buf(&U_buf)
-                                        .arg_buf(&V_buf);
+                                        .arg_buf(Y_buf)
+                                        .arg_buf(U_buf)
+                                        .arg_buf(V_buf);
 
                     kernel.enq().expect("kernel.enq()");
 
@@ -666,6 +665,89 @@ fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
           .unwrap()
           .as_mut()
           .map(|ptr| unsafe { ptr.as_mut() }.unwrap())
+}
+
+/// Builds an ocl `Buffer` with the specified length.
+fn build_ocl_buffer<'a>(engine: &Engine,
+                        pro_que: &'a ocl::ProQue,
+                        length: usize)
+                        -> Option<ocl::Buffer<u8>> {
+    ocl::Buffer::<u8>::builder()
+        .queue(pro_que.queue().clone())
+        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+        .dims(length)
+        .build()
+        .chain_err(|| "could not build the OpenCL buffer")
+        .map_err(|ref e| { engine.con_print(&format!("{}", e.display())); })
+        .ok()
+}
+
+/// Builds ocl YUV buffers with the specified length.
+fn build_yuv_buffers<'a>(engine: &Engine,
+                         pro_que: &'a ocl::ProQue,
+                         (Y_len, U_len, V_len): (usize, usize, usize))
+                         -> Option<*mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
+    let Y_buf = build_ocl_buffer(engine, pro_que, Y_len);
+    let U_buf = build_ocl_buffer(engine, pro_que, U_len);
+    let V_buf = build_ocl_buffer(engine, pro_que, V_len);
+
+    Y_buf.and_then(|Y| U_buf.map(|U| (Y, U)))
+         .and_then(|(Y, U)| V_buf.map(|V| (Y, U, V)))
+         .map(|YUV| Box::into_raw(Box::new(YUV)))
+}
+
+/// Returns the ocl buffers for Y, U and V.
+fn get_yuv_buffers<'a>(engine: &Engine,
+                       pro_que: &'a ocl::ProQue,
+                       (Y_len, U_len, V_len): (usize, usize, usize))
+                       -> Option<&'a mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
+    if engine.data().ocl_yuv_buffers.is_none() {
+        let buffers = build_yuv_buffers(engine, pro_que, (Y_len, U_len, V_len));
+        engine.data().ocl_yuv_buffers = Some(buffers);
+    }
+
+    // Verify the buffer sizes.
+    match engine.data()
+                  .ocl_yuv_buffers
+                  .as_mut()
+                  .unwrap()
+                  .as_mut()
+                  .map(|ptr| unsafe { ptr.as_mut() }.unwrap()) {
+        Some(&mut (ref Y_buf, ref U_buf, ref V_buf)) => {
+            // Check if the requested buffer size is different.
+            // In most cases if one of the buffer sizes changes, the other do as well.
+            if Y_buf.len() != Y_len || U_buf.len() != U_len || V_buf.len() != V_len {
+                // Drop the references first.
+                drop(Y_buf);
+                drop(U_buf);
+                drop(V_buf);
+
+                // Now drop the buffers themselves.
+                drop(unsafe {
+                         Box::from_raw(engine.data().ocl_yuv_buffers.take().unwrap().unwrap())
+                     });
+
+                // And allocate new ones.
+                let buffers = build_yuv_buffers(engine, pro_que, (Y_len, U_len, V_len));
+                engine.data().ocl_yuv_buffers = Some(buffers);
+
+                buffers.map(|ptr| unsafe { ptr.as_mut() }.unwrap())
+            } else {
+                // Drop the existing references.
+                drop(Y_buf);
+                drop(U_buf);
+                drop(V_buf);
+
+                engine.data()
+                      .ocl_yuv_buffers
+                      .as_mut()
+                      .unwrap()
+                      .as_mut()
+                      .map(|ptr| unsafe { ptr.as_mut() }.unwrap())
+            }
+        }
+        None => None,
+    }
 }
 
 cvar!(cap_allow_tabbing_out_in_demos, "1");

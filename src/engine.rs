@@ -16,6 +16,7 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer = MainThreadDataContainer {
         time_interpolator: None,
         encoder_pixel_format: None,
         pro_que: None,
+        ocl_yuv_buffers: None,
     },
 };
 
@@ -29,6 +30,8 @@ pub struct MainThreadData {
     pub time_interpolator: Option<::capture::TimeInterpolator>,
     pub encoder_pixel_format: Option<::ffmpeg::format::Pixel>,
     pub pro_que: Option<Option<*mut ::ocl::ProQue>>,
+    pub ocl_yuv_buffers:
+        Option<Option<*mut (::ocl::Buffer<u8>, ::ocl::Buffer<u8>, ::ocl::Buffer<u8>)>>,
 }
 
 /// A Send+Sync container to allow putting `MainThreadData` into a global variable.
