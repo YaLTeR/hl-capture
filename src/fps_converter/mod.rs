@@ -1,7 +1,9 @@
 use engine::Engine;
 use hooks::hw;
 
+mod sampling;
 mod simple;
+pub use self::sampling::SamplingConverter;
 pub use self::simple::SimpleConverter;
 
 pub trait FPSConverter {
@@ -14,4 +16,5 @@ pub trait FPSConverter {
 
 pub enum FPSConverters {
     Simple(SimpleConverter),
+    Sampling(SamplingConverter),
 }

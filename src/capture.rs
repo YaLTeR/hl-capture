@@ -36,6 +36,7 @@ thread_local! {
 }
 
 pub struct CaptureParameters {
+    pub sampling_time_base: Option<Rational>,
     pub sound_extra: f64,
     pub time_base: Rational,
     pub volume: f32,
@@ -458,12 +459,20 @@ pub fn stop(engine: &Engine) {
 /// - `<i32 a> <i32 b>` - treated as a fractional `a/b` FPS value.
 fn parse_fps(string: &str) -> Option<Rational> {
     if let Ok(fps) = string.parse() {
+        if fps <= 0 {
+            return None;
+        }
+
         return Some((1, fps).into());
     }
 
     let mut split = string.splitn(2, ' ');
     if let Some(den) = split.next().and_then(|s| s.parse().ok()) {
         if let Some(num) = split.next().and_then(|s| s.parse().ok()) {
+            if num <= 0 || den <= 0 {
+                return None;
+            }
+
             return Some((num, den).into());
         }
     }
@@ -505,6 +514,7 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
 /// Parses the CVar values into `CaptureParameters`.
 fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
     Ok(CaptureParameters {
+           sampling_time_base: parse_fps(&to_string!(engine, cap_sps)),
            sound_extra: parse!(engine, cap_sound_extra),
            time_base: parse_fps(&to_string!(engine, cap_fps))
                .ok_or("invalid cap_fps")?,
@@ -529,8 +539,17 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    engine.data().fps_converter =
-        Some(FPSConverters::Simple(SimpleConverter::new(parameters.time_base.into())));
+    engine.data().fps_converter = if engine.data()
+                                           .capture_parameters
+                                           .as_ref()
+                                           .unwrap()
+                                           .sampling_time_base
+                                           .is_some()
+    {
+        Some(FPSConverters::Sampling(SamplingConverter::new(parameters.time_base.into())))
+    } else {
+        Some(FPSConverters::Simple(SimpleConverter::new(parameters.time_base.into())))
+    };
 
     *CAPTURING.write().unwrap() = true;
 
@@ -563,5 +582,6 @@ cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");
 
 // Capture parameters.
+cvar!(cap_sps, "0");
 cvar!(cap_sound_extra, "0");
 cvar!(cap_volume, "0.4");

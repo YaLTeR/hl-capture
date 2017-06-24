@@ -297,7 +297,8 @@ pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
     // TODO: this will NOT set the frametime on the first frame of capture / demo playback and WILL
     // set the frametime on the first frame of not capturing. This needs to be fixed somehow.
     if capture::is_capturing() && (*ptr!(cls)).demoplayback != 0 {
-        let frametime = capture::get_capture_parameters(&engine).time_base.into();
+        let params = capture::get_capture_parameters(&engine);
+        let frametime = params.sampling_time_base.unwrap_or(params.time_base).into();
 
         *ptr!(host_frametime) = frametime;
         *ptr!(realtime) = old_realtime + frametime;
@@ -448,6 +449,10 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         match engine.data().fps_converter.as_mut().unwrap() {
             &mut FPSConverters::Simple(ref mut simple_conv) => {
                 simple_conv.time_passed(&engine, *ptr!(host_frametime), capture_frame);
+            }
+
+            &mut FPSConverters::Sampling(ref mut sampling_conv) => {
+                sampling_conv.time_passed(&engine, *ptr!(host_frametime), capture_frame);
             }
         }
     }
@@ -646,7 +651,9 @@ fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
         let pro_que = context.and_then(|ctx| {
             ocl::ProQue::builder()
                 .context(ctx)
-                .src(include_str!("../../cl_src/color_conversion.cl"))
+                .prog_bldr(ocl::Program::builder()
+                               .src(include_str!("../../cl_src/color_conversion.cl"))
+                               .src(include_str!("../../cl_src/sampling.cl")))
                 .build()
                 .chain_err(|| "error building ocl::ProQue")
         })
