@@ -127,7 +127,9 @@ impl FPSConverter for SamplingConverter {
                                            ocl_gl_texture.as_ref(),
                                            private.src_buffer(),
                                            private.dst_buffer(),
-                                           ((1f64 - exposure) - self.remainder) as f32);
+                                           (((1f64 - exposure) - self.remainder) *
+                                                (1f64 / exposure)) as
+                                               f32);
                         private.switch_buffer_index();
                     }
                 }
