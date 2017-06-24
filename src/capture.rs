@@ -36,6 +36,7 @@ thread_local! {
 }
 
 pub struct CaptureParameters {
+    pub sampling_exposure: f64,
     pub sampling_time_base: Option<Rational>,
     pub sound_extra: f64,
     pub time_base: Rational,
@@ -483,6 +484,11 @@ fn parse_fps(string: &str) -> Option<Rational> {
     None
 }
 
+/// Parses the given string into a valid exposure value.
+fn parse_exposure(string: &str) -> Result<f64> {
+    string.parse().chain_err(|| "could not convert the string to a floating point value").and_then(|x| if x > 0f64 && x<= 1f64 { Ok(x) } else { bail!("allowed exposure values range from 0 (non-inclusive) to 1 (inclusive)") })
+}
+
 macro_rules! to_string {
     ($engine:expr, $cvar:expr) => (
         $cvar.to_string($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
@@ -517,6 +523,8 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
 /// Parses the CVar values into `CaptureParameters`.
 fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
     Ok(CaptureParameters {
+           sampling_exposure: parse_exposure(&to_string!(engine, cap_exposure))
+               .chain_err(|| "invalid cap_exposure")?,
            sampling_time_base: parse_fps(&to_string!(engine, cap_sps)),
            sound_extra: parse!(engine, cap_sound_extra),
            time_base: parse_fps(&to_string!(engine, cap_fps))
@@ -587,6 +595,7 @@ cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");
 
 // Capture parameters.
+cvar!(cap_exposure, "1.0");
 cvar!(cap_sps, "");
 cvar!(cap_sound_extra, "0");
 cvar!(cap_volume, "0.4");
