@@ -12,6 +12,7 @@ use std::cell::RefCell;
 use std::cmp;
 use std::ffi::{CStr, CString};
 use std::mem;
+use std::ops::Deref;
 use std::ptr;
 use std::slice;
 
@@ -22,6 +23,7 @@ use dl;
 use encode;
 use engine::Engine;
 use errors::*;
+use fps_converter::*;
 use sdl;
 
 // Stuff from these variables should ONLY be accessed from the main game thread.
@@ -79,6 +81,68 @@ thread_local! {
 pub enum SoundCaptureMode {
     Normal,
     Remaining,
+}
+
+pub struct OclGlTexture {
+    image: ocl::Image<u8>,
+}
+
+pub enum FrameCapture {
+    OpenGL,
+    OpenCL(OclGlTexture),
+}
+
+impl OclGlTexture {
+    fn new(_: &Engine, texture: GLuint, queue: ocl::Queue, dims: ocl::SpatialDims) -> Self {
+        unsafe {
+            gl::Finish();
+        }
+
+        let descr = ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
+                                                        dims[0],
+                                                        dims[1],
+                                                        1,
+                                                        1,
+                                                        0,
+                                                        0,
+                                                        None);
+
+        let image = ocl::Image::<u8>::from_gl_texture(queue,
+                                                      ocl::flags::MEM_READ_ONLY,
+                                                      descr,
+                                                      ocl::core::GlTextureTarget::GlTexture2d,
+                                                      0,
+                                                      texture)
+                    .expect("ocl::Image::from_gl_texture()");
+
+        image.cmd().gl_acquire().enq().expect("gl_acquire()");
+
+        Self { image }
+    }
+}
+
+impl Deref for OclGlTexture {
+    type Target = ocl::Image<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.image
+    }
+}
+
+impl Drop for OclGlTexture {
+    fn drop(&mut self) {
+        let mut event = ocl::Event::empty();
+
+        self.image
+            .cmd()
+            .gl_release()
+            .enew(&mut event)
+            .enq()
+            .expect("gl_release()");
+
+        event.wait_for()
+             .expect("waiting for the gl_release() event");
+    }
 }
 
 #[repr(C)]
@@ -374,108 +438,10 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         // Always capture sound.
         engine.data().capture_sound = true;
 
-        let frames = engine.data()
-                           .time_interpolator
-                           .as_mut()
-                           .unwrap()
-                           .time_passed(*ptr!(host_frametime));
-
-        // If frames is zero, we need to skip this frame.
-        if frames > 0 {
-            let (w, h) = get_resolution(&engine);
-            let mut buf = capture::get_buffer(&engine, (w, h));
-
-            let texture = (*ptr!(s_BackBufferFBO)).Tex;
-            let pro_que = if texture != 0 {
-                get_pro_que(&engine)
-            } else {
-                None
-            };
-
-            if pro_que.is_some() {
-                let pro_que = pro_que.unwrap();
-
-                gl::Finish();
-
-                let descr = ocl::builders::ImageDescriptor::new(ocl::enums::MemObjectType::Image2d,
-                                                                w as usize,
-                                                                h as usize,
-                                                                1,
-                                                                1,
-                                                                0,
-                                                                0,
-                                                                None);
-
-                let image =
-                    ocl::Image::<u8>::from_gl_texture(pro_que.queue(),
-                                                      ocl::flags::MEM_READ_ONLY,
-                                                      descr,
-                                                      ocl::core::GlTextureTarget::GlTexture2d,
-                                                      0,
-                                                      texture)
-                    .expect("ocl::Image::from_gl_texture()");
-
-                image.cmd().gl_acquire().enq().expect("gl_acquire()");
-
-                let yuv_buffers = if engine.data().encoder_pixel_format.unwrap() ==
-                    format::Pixel::YUV420P
-                {
-                    buf.set_format(format::Pixel::YUV420P);
-                    let frame = buf.get_frame();
-
-                    get_yuv_buffers(&engine,
-                                    pro_que,
-                                    (frame.data(0).len(), frame.data(1).len(), frame.data(2).len()))
-                } else {
-                    None
-                };
-
-                if yuv_buffers.is_some() {
-                    let mut frame = buf.get_frame();
-
-                    let &mut (ref Y_buf, ref U_buf, ref V_buf) = yuv_buffers.unwrap();
-
-                    let kernel = pro_que.create_kernel("rgb_to_yuv420_601_limited")
-                                        .unwrap()
-                                        .gws((w, h))
-                                        .arg_img(&image)
-                                        .arg_scl(frame.stride(0))
-                                        .arg_scl(frame.stride(1))
-                                        .arg_scl(frame.stride(2))
-                                        .arg_buf(Y_buf)
-                                        .arg_buf(U_buf)
-                                        .arg_buf(V_buf);
-
-                    kernel.enq().expect("kernel.enq()");
-
-                    Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
-                    U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
-                    V_buf.read(frame.data_mut(2)).enq().expect("V_buf.read()");
-                } else {
-                    buf.set_format(format::Pixel::RGBA);
-
-                    image.read(buf.as_mut_slice()).enq().expect("image.read()");
-                }
-
-                image.cmd().gl_release().enq().expect("gl_release()");
-                pro_que.finish().expect("pro_que.finish()");
-            } else {
-                buf.set_format(format::Pixel::RGB24);
-
-                // Our buffer expects 1-byte alignment.
-                gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-
-                // Get the pixels!
-                gl::ReadPixels(0,
-                               0,
-                               w as GLsizei,
-                               h as GLsizei,
-                               gl::RGB,
-                               gl::UNSIGNED_BYTE,
-                               buf.as_mut_slice().as_mut_ptr() as _);
+        match engine.data().fps_converter.as_mut().unwrap() {
+            &mut FPSConverters::Simple(ref mut simple_conv) => {
+                simple_conv.time_passed(&engine, *ptr!(host_frametime), capture_frame);
             }
-
-            capture::capture(&engine, buf, frames);
         }
     }
 
@@ -767,6 +733,72 @@ fn get_yuv_buffers<'a>(engine: &Engine,
             }
         }
         None => None,
+    }
+}
+
+/// Captures and returns the current frame.
+fn capture_frame(engine: &Engine) -> FrameCapture {
+    let texture = unsafe { *ptr!(s_BackBufferFBO) }.Tex;
+    let pro_que = if texture != 0 {
+        get_pro_que(&engine)
+    } else {
+        None
+    };
+
+    if let Some(pro_que) = pro_que {
+        let (w, h) = get_resolution(&engine);
+
+        FrameCapture::OpenCL(OclGlTexture::new(&engine,
+                                               texture,
+                                               pro_que.queue().clone(),
+                                               (w, h).into()))
+    } else {
+        FrameCapture::OpenGL
+    }
+}
+
+/// Reads the given `ocl::Image` into the buffer.
+pub fn read_ocl_image_into_buf(engine: &Engine,
+                               image: &ocl::Image<u8>,
+                               buf: &mut capture::VideoBuffer) {
+    let pro_que = get_pro_que(engine).unwrap();
+
+    let yuv_buffers = if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
+        buf.set_format(format::Pixel::YUV420P);
+        let frame = buf.get_frame();
+
+        get_yuv_buffers(&engine,
+                        pro_que,
+                        (frame.data(0).len(), frame.data(1).len(), frame.data(2).len()))
+    } else {
+        None
+    };
+
+    if yuv_buffers.is_some() {
+        let mut frame = buf.get_frame();
+
+        let &mut (ref Y_buf, ref U_buf, ref V_buf) = yuv_buffers.unwrap();
+
+        let kernel = pro_que.create_kernel("rgb_to_yuv420_601_limited")
+                            .unwrap()
+                            .gws(image.dims())
+                            .arg_img(image)
+                            .arg_scl(frame.stride(0))
+                            .arg_scl(frame.stride(1))
+                            .arg_scl(frame.stride(2))
+                            .arg_buf(Y_buf)
+                            .arg_buf(U_buf)
+                            .arg_buf(V_buf);
+
+        kernel.enq().expect("kernel.enq()");
+
+        Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
+        U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
+        V_buf.read(frame.data_mut(2)).enq().expect("V_buf.read()");
+    } else {
+        buf.set_format(format::Pixel::RGBA);
+
+        image.read(buf.as_mut_slice()).enq().expect("image.read()");
     }
 }
 

@@ -25,6 +25,7 @@ mod cvar;
 mod dl;
 mod encode;
 mod engine;
+mod fps_converter;
 mod hooks {
     pub mod hw;
 }

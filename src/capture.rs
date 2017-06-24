@@ -9,6 +9,7 @@ use std::thread;
 use encode::{Encoder, EncoderParameters};
 use engine::Engine;
 use errors::*;
+use fps_converter::*;
 use hooks::hw;
 // use profiler::*;
 
@@ -69,14 +70,6 @@ pub struct AudioBuffer {
 struct SendOnDrop<'a, T: 'a> {
     buffer: Option<T>,
     channel: &'a Sender<T>,
-}
-
-pub struct TimeInterpolator {
-    /// Difference, in video frames, between how much time passed in-game and how much video we
-    /// output
-    remainder: f64,
-
-    time_base: f64,
 }
 
 impl VideoBuffer {
@@ -211,30 +204,6 @@ impl<'a, T> Deref for SendOnDrop<'a, T> {
 
     fn deref(&self) -> &T {
         self.buffer.as_ref().unwrap()
-    }
-}
-
-impl TimeInterpolator {
-    pub fn new(time_base: f64) -> Self {
-        assert!(time_base > 0f64);
-
-        Self {
-            remainder: 0f64,
-            time_base,
-        }
-    }
-
-    /// Updates the interpolator state and returns the number of times this frame should be
-    /// sent to the encoder.
-    pub fn time_passed(&mut self, time: f64) -> usize {
-        self.remainder += time / self.time_base;
-
-        // Push this frame as long as it takes up the most of the video frame.
-        // Remainder is > -0.5 at all times.
-        let frames = (self.remainder + 0.5) as usize;
-        self.remainder -= frames as f64;
-
-        return frames;
     }
 }
 
@@ -445,7 +414,7 @@ pub fn stop(engine: &Engine) {
     hw::capture_remaining_sound(engine);
 
     *CAPTURING.write().unwrap() = false;
-    engine.data().time_interpolator = None;
+    engine.data().fps_converter = None;
     engine.data().encoder_pixel_format = None;
 
     SEND_TO_CAPTURE_THREAD.lock()
@@ -560,7 +529,8 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    engine.data().time_interpolator = Some(TimeInterpolator::new(parameters.time_base.into()));
+    engine.data().fps_converter =
+        Some(FPSConverters::Simple(SimpleConverter::new(parameters.time_base.into())));
 
     *CAPTURING.write().unwrap() = true;
 

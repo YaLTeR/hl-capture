@@ -13,7 +13,7 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer = MainThreadDataContainer {
         sound_remainder: 0f64,
         sound_capture_mode: ::hooks::hw::SoundCaptureMode::Normal,
         inside_key_event: false,
-        time_interpolator: None,
+        fps_converter: None,
         encoder_pixel_format: None,
         pro_que: None,
         ocl_yuv_buffers: None,
@@ -27,7 +27,7 @@ pub struct MainThreadData {
     pub sound_remainder: f64,
     pub sound_capture_mode: ::hooks::hw::SoundCaptureMode,
     pub inside_key_event: bool,
-    pub time_interpolator: Option<::capture::TimeInterpolator>,
+    pub fps_converter: Option<::fps_converter::FPSConverters>,
     pub encoder_pixel_format: Option<::ffmpeg::format::Pixel>,
     pub pro_que: Option<Option<*mut ::ocl::ProQue>>,
     pub ocl_yuv_buffers:
