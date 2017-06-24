@@ -8,7 +8,7 @@ use hooks::hw::FrameCapture;
 
 pub struct SimpleConverter {
     /// Difference, in video frames, between how much time passed in-game and how much video we
-    /// output
+    /// output.
     remainder: f64,
 
     /// The target time_base.
@@ -66,7 +66,7 @@ impl FPSConverter for SimpleConverter {
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
-                    hw::read_ocl_image_into_buf(engine, &ocl_gl_texture, &mut buf);
+                    hw::read_ocl_image_into_buf(engine, ocl_gl_texture.as_ref(), &mut buf);
                 }
             }
 

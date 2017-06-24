@@ -1,3 +1,8 @@
+__kernel void fill_with_black(write_only image2d_t dst_image) {
+	int2 coords = (int2)(get_global_id(0), get_global_id(1));
+	write_imagef(dst_image, coords, (float4)(0, 0, 0, 0));
+}
+
 __kernel void weighted_image_add(read_only image2d_t src_image,
                                  read_only image2d_t buf_image,
                                  write_only image2d_t dst_image,

@@ -415,6 +415,9 @@ pub fn stop(engine: &Engine) {
     hw::capture_remaining_sound(engine);
 
     *CAPTURING.write().unwrap() = false;
+    if let Some(FPSConverters::Sampling(ref mut sampling_conv)) = engine.data().fps_converter {
+        sampling_conv.free();
+    }
     engine.data().fps_converter = None;
     engine.data().encoder_pixel_format = None;
 
@@ -546,7 +549,9 @@ command!(cap_start, |mut engine| {
                                            .sampling_time_base
                                            .is_some()
     {
-        Some(FPSConverters::Sampling(SamplingConverter::new(parameters.time_base.into())))
+        Some(FPSConverters::Sampling(SamplingConverter::new(&engine,
+                                                            parameters.time_base.into(),
+                                                            parameters.video_resolution)))
     } else {
         Some(FPSConverters::Simple(SimpleConverter::new(parameters.time_base.into())))
     };

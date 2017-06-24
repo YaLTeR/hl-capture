@@ -12,7 +12,6 @@ use std::cell::RefCell;
 use std::cmp;
 use std::ffi::{CStr, CString};
 use std::mem;
-use std::ops::Deref;
 use std::ptr;
 use std::slice;
 
@@ -121,10 +120,8 @@ impl OclGlTexture {
     }
 }
 
-impl Deref for OclGlTexture {
-    type Target = ocl::Image<u8>;
-
-    fn deref(&self) -> &Self::Target {
+impl AsRef<ocl::Image<u8>> for OclGlTexture {
+    fn as_ref(&self) -> &ocl::Image<u8> {
         &self.image
     }
 }
@@ -633,7 +630,7 @@ pub fn capture_remaining_sound(engine: &Engine) {
 }
 
 /// Returns the ocl `ProCue`.
-fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
+pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
     if engine.data().pro_que.is_none() {
         let report_opencl_error = |ref e: Error| {
             engine.con_print(&format!("Could not initialize OpenCL, proceeding without it. \
@@ -673,10 +670,10 @@ fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
 }
 
 /// Builds an ocl `Buffer` with the specified length.
-fn build_ocl_buffer<'a>(engine: &Engine,
-                        pro_que: &'a ocl::ProQue,
-                        length: usize)
-                        -> Option<ocl::Buffer<u8>> {
+fn build_ocl_buffer(engine: &Engine,
+                    pro_que: &ocl::ProQue,
+                    length: usize)
+                    -> Option<ocl::Buffer<u8>> {
     ocl::Buffer::<u8>::builder()
         .queue(pro_que.queue().clone())
         .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
@@ -687,11 +684,31 @@ fn build_ocl_buffer<'a>(engine: &Engine,
         .ok()
 }
 
+/// Builds an ocl `Image` with the specified dimensions.
+pub fn build_ocl_image(engine: &Engine,
+                       pro_que: &ocl::ProQue,
+                       mem_flags: ocl::MemFlags,
+                       data_type: ocl::enums::ImageChannelDataType,
+                       dims: ocl::SpatialDims)
+                       -> Option<ocl::Image<u8>> {
+    ocl::Image::<u8>::builder()
+        .channel_order(ocl::enums::ImageChannelOrder::Rgba)
+        .channel_data_type(data_type)
+        .image_type(ocl::enums::MemObjectType::Image2d)
+        .dims(dims)
+        .flags(mem_flags)
+        .queue(pro_que.queue().clone())
+        .build()
+        .chain_err(|| "could not build the OpenCL image")
+        .map_err(|ref e| { engine.con_print(&format!("{}", e.display())); })
+        .ok()
+}
+
 /// Builds ocl YUV buffers with the specified length.
-fn build_yuv_buffers<'a>(engine: &Engine,
-                         pro_que: &'a ocl::ProQue,
-                         (Y_len, U_len, V_len): (usize, usize, usize))
-                         -> Option<*mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
+fn build_yuv_buffers(engine: &Engine,
+                     pro_que: &ocl::ProQue,
+                     (Y_len, U_len, V_len): (usize, usize, usize))
+                     -> Option<*mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
     let Y_buf = build_ocl_buffer(engine, pro_que, Y_len);
     let U_buf = build_ocl_buffer(engine, pro_que, U_len);
     let V_buf = build_ocl_buffer(engine, pro_que, V_len);
