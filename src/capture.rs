@@ -587,6 +587,6 @@ cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");
 
 // Capture parameters.
-cvar!(cap_sps, "0");
+cvar!(cap_sps, "");
 cvar!(cap_sound_extra, "0");
 cvar!(cap_volume, "0.4");
