@@ -60,8 +60,12 @@ impl FPSConverter for SamplingConverter {
         let old_remainder = self.remainder;
         self.remainder += frametime / self.time_base;
 
-        if self.remainder < 1f64 {
-            let weight = self.remainder - old_remainder;
+        let exposure = capture::get_capture_parameters(engine).sampling_exposure;
+
+        if self.remainder <= (1f64 - exposure) {
+            // Do nothing.
+        } else if self.remainder < 1f64 {
+            let weight = (self.remainder - old_remainder.max(1f64 - exposure)) * (1f64 / exposure);
 
             match frame_capture {
                 FrameCapture::OpenGL => {
@@ -79,7 +83,7 @@ impl FPSConverter for SamplingConverter {
                 }
             }
         } else {
-            let weight = 1f64 - old_remainder;
+            let weight = (1f64 - old_remainder.max(1f64 - exposure)) * (1f64 / exposure);
 
             match frame_capture {
                 FrameCapture::OpenGL => {
@@ -116,12 +120,14 @@ impl FPSConverter for SamplingConverter {
                     }
 
                     // Add the remaining image into the buffer.
-                    weighted_image_add(engine,
-                                       ocl_gl_texture.as_ref(),
-                                       private.src_buffer(),
-                                       private.dst_buffer(),
-                                       self.remainder as f32);
-                    private.switch_buffer_index();
+                    if self.remainder > (1f64 - exposure) {
+                        weighted_image_add(engine,
+                                           ocl_gl_texture.as_ref(),
+                                           private.src_buffer(),
+                                           private.dst_buffer(),
+                                           ((1f64 - exposure) - self.remainder) as f32);
+                        private.switch_buffer_index();
+                    }
                 }
             }
         }
