@@ -460,20 +460,24 @@ impl Encoder {
         Ok(())
     }
 
+    #[inline]
     pub fn width(&self) -> u32 {
         self.video_encoder.width()
     }
 
+    #[inline]
     pub fn height(&self) -> u32 {
         self.video_encoder.height()
     }
 
+    #[inline]
     pub fn format(&self) -> format::Pixel {
         self.video_encoder.format()
     }
 }
 
 impl Drop for Encoder {
+    #[inline]
     fn drop(&mut self) {
         if !self.finished {
             panic!("dropped an Encoder that was not properly closed (see Encoder::finish())");
@@ -482,6 +486,7 @@ impl Drop for Encoder {
 }
 
 impl PixFmtConverter {
+    #[inline]
     fn new(output_format: format::Pixel) -> Self {
         Self {
             inner: None,
@@ -499,12 +504,14 @@ impl PixFmtConverter {
         self.inner.as_mut().unwrap().convert(frame)
     }
 
+    #[inline]
     fn output_frame(&mut self) -> Option<&mut frame::Video> {
         self.inner.as_mut().map(|x| &mut x.output_frame)
     }
 }
 
 impl PixFmtConverterInner {
+    #[inline]
     fn new((width, height): (u32, u32),
            input: format::Pixel,
            output: format::Pixel)
@@ -516,6 +523,7 @@ impl PixFmtConverterInner {
            })
     }
 
+    #[inline]
     fn convert(&mut self, frame: &frame::Video) -> Result<&mut frame::Video> {
         self.context
             .run(frame, &mut self.output_frame)
@@ -524,6 +532,7 @@ impl PixFmtConverterInner {
         Ok(&mut self.output_frame)
     }
 
+    #[inline]
     fn format(&self) -> format::Pixel {
         self.context.input().format
     }

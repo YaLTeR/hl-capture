@@ -12,6 +12,7 @@ pub struct Args<'a> {
 }
 
 impl<'a> Args<'a> {
+    #[inline]
     pub fn new(engine: &'a engine::Engine) -> Self {
         Self {
             count: engine.cmd_argc(),
@@ -24,6 +25,7 @@ impl<'a> Args<'a> {
 impl<'a> Iterator for Args<'a> {
     type Item = String;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.index == self.count {
             None
@@ -34,6 +36,7 @@ impl<'a> Iterator for Args<'a> {
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         ((self.count - self.index) as usize, Some((self.count - self.index) as usize))
     }

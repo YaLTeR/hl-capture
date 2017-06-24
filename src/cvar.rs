@@ -44,6 +44,7 @@ unsafe impl Send for CVar {}
 unsafe impl Sync for CVar {}
 
 impl cvar_t {
+    #[inline]
     pub fn string_is_non_null(&self) -> bool {
         !self.string.is_null()
     }
@@ -56,6 +57,7 @@ impl CVar {
     /// Unsafe because this function should only be called from the main game thread.
     /// You should also ensure that you don't call any engine functions while holding
     /// this reference, because the game also has a mutable reference to this CVar.
+    #[inline]
     pub unsafe fn get_engine_cvar(&self) -> &'static mut cvar_t {
         &mut *self.engine_cvar
     }

@@ -31,6 +31,7 @@ struct SamplingConverterPrivate {
 }
 
 impl SamplingConverter {
+    #[inline]
     pub fn new(engine: &Engine, time_base: f64, video_resolution: (u32, u32)) -> Self {
         assert!(time_base > 0f64);
 
@@ -42,6 +43,7 @@ impl SamplingConverter {
         }
     }
 
+    #[inline]
     pub fn free(&mut self) {
         drop(unsafe { Box::from_raw(self.private) });
     }
@@ -199,23 +201,28 @@ impl SamplingConverterPrivate {
         rv
     }
 
+    #[inline]
     fn src_buffer(&self) -> &ocl::Image<u8> {
         &self.ocl_buffers[self.ocl_current_buffer_index]
     }
 
+    #[inline]
     fn dst_buffer(&self) -> &ocl::Image<u8> {
         &self.ocl_buffers[self.ocl_current_buffer_index ^ 1]
     }
 
+    #[inline]
     fn output_image(&self) -> &ocl::Image<u8> {
         &self.ocl_output_image
     }
 
+    #[inline]
     fn switch_buffer_index(&mut self) {
         self.ocl_current_buffer_index ^= 1;
     }
 }
 
+#[inline]
 fn weighted_image_add(engine: &Engine,
                       src: &ocl::Image<u8>,
                       buf: &ocl::Image<u8>,
@@ -234,6 +241,7 @@ fn weighted_image_add(engine: &Engine,
     kernel.enq().expect("sampling kernel enq()");
 }
 
+#[inline]
 fn fill_with_black(engine: &Engine, image: &ocl::Image<u8>) {
     let pro_que = hw::get_pro_que(engine).unwrap();
 

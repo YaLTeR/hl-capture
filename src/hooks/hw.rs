@@ -121,6 +121,7 @@ impl OclGlTexture {
 }
 
 impl AsRef<ocl::Image<u8>> for OclGlTexture {
+    #[inline]
     fn as_ref(&self) -> &ocl::Image<u8> {
         &self.image
     }
@@ -519,6 +520,7 @@ unsafe fn refresh_pointers() -> Result<()> {
 ///
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
+#[inline]
 unsafe fn reset_pointers() {
     FUNCTIONS = None;
     POINTERS = None;
@@ -548,6 +550,7 @@ unsafe fn register_cvars_and_commands() {
 ///
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
+#[inline]
 unsafe fn register_command(name: &'static [u8], callback: unsafe extern "C" fn()) {
     real!(Cmd_AddCommand)(name as *const _ as *const _, callback as *mut c_void);
 }
@@ -556,6 +559,7 @@ unsafe fn register_command(name: &'static [u8], callback: unsafe extern "C" fn()
 ///
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
+#[inline]
 pub unsafe fn register_variable(cvar: &mut cvar::cvar_t) {
     real!(Cvar_RegisterVariable)(cvar);
 }
@@ -566,6 +570,7 @@ pub unsafe fn register_variable(cvar: &mut cvar::cvar_t) {
 ///
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
+#[inline]
 pub unsafe fn con_print(string: &str) {
     let cstring = CString::new(string.replace('%', "%%"))
         .expect("string cannot contain null bytes");
@@ -576,6 +581,7 @@ pub unsafe fn con_print(string: &str) {
 ///
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
+#[inline]
 pub unsafe fn cmd_argc() -> u32 {
     let argc = real!(Cmd_Argc)();
     cmp::max(0, argc) as u32
@@ -585,6 +591,7 @@ pub unsafe fn cmd_argc() -> u32 {
 ///
 /// # Safety
 /// Unsafe because this function should only be called from the main game thread.
+#[inline]
 pub unsafe fn cmd_argv(index: u32) -> String {
     let index = cmp::min(index, i32::max_value() as u32) as i32;
     let arg = real!(Cmd_Argv)(index);
@@ -615,11 +622,13 @@ pub fn get_resolution(_: &Engine) -> (u32, u32) {
 }
 
 /// Resets the sound capture remainder.
+#[inline]
 pub fn reset_sound_capture_remainder(engine: &Engine) {
     engine.data().sound_remainder = 0f64;
 }
 
 /// Captures the remaining and extra sound.
+#[inline]
 pub fn capture_remaining_sound(engine: &Engine) {
     engine.data().sound_capture_mode = SoundCaptureMode::Remaining;
     engine.data().capture_sound = true;

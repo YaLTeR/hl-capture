@@ -12,6 +12,7 @@ pub struct Handle {
 unsafe impl Sync for Handle {}
 
 impl Drop for Handle {
+    #[inline]
     fn drop(&mut self) {
         unsafe {
             dlclose(self.ptr);

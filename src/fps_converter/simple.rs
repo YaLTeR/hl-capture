@@ -16,6 +16,7 @@ pub struct SimpleConverter {
 }
 
 impl SimpleConverter {
+    #[inline]
     pub fn new(time_base: f64) -> Self {
         assert!(time_base > 0f64);
 

@@ -75,6 +75,7 @@ struct SendOnDrop<'a, T: 'a> {
 }
 
 impl VideoBuffer {
+    #[inline]
     fn new() -> Self {
         Self {
             data: Vec::new(),
@@ -87,6 +88,7 @@ impl VideoBuffer {
         }
     }
 
+    #[inline]
     pub fn set_resolution(&mut self, width: u32, height: u32) {
         if self.width != width || self.height != height {
             println!("Changing resolution from {}×{} to {}×{}.",
@@ -100,6 +102,7 @@ impl VideoBuffer {
         }
     }
 
+    #[inline]
     pub fn set_format(&mut self, format: format::Pixel) {
         if self.format != format {
             println!("Changing format from {:?} to {:?}", self.format, format);
@@ -173,20 +176,24 @@ impl VideoBuffer {
 }
 
 impl AudioBuffer {
+    #[inline]
     fn new() -> Self {
         Self { data: Vec::new() }
     }
 
+    #[inline]
     pub fn data(&self) -> &Vec<(i16, i16)> {
         &self.data
     }
 
+    #[inline]
     pub fn data_mut(&mut self) -> &mut Vec<(i16, i16)> {
         &mut self.data
     }
 }
 
 impl<'a, T> SendOnDrop<'a, T> {
+    #[inline]
     fn new(buffer: T, channel: &'a Sender<T>) -> Self {
         Self {
             buffer: Some(buffer),
@@ -196,6 +203,7 @@ impl<'a, T> SendOnDrop<'a, T> {
 }
 
 impl<'a, T> Drop for SendOnDrop<'a, T> {
+    #[inline]
     fn drop(&mut self) {
         self.channel.send(self.buffer.take().unwrap()).unwrap();
     }
@@ -204,6 +212,7 @@ impl<'a, T> Drop for SendOnDrop<'a, T> {
 impl<'a, T> Deref for SendOnDrop<'a, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &T {
         self.buffer.as_ref().unwrap()
     }
@@ -343,6 +352,7 @@ pub fn initialize(_: &Engine) {
     });
 }
 
+#[inline]
 pub fn get_buffer(_: &Engine, (width, height): (u32, u32)) -> VideoBuffer {
     let mut buf = VIDEO_BUF_RECEIVER.lock()
                                     .unwrap()
@@ -356,6 +366,7 @@ pub fn get_buffer(_: &Engine, (width, height): (u32, u32)) -> VideoBuffer {
     buf
 }
 
+#[inline]
 pub fn get_audio_buffer(_: &Engine) -> AudioBuffer {
     AUDIO_BUF_RECEIVER.lock()
                       .unwrap()
@@ -365,6 +376,7 @@ pub fn get_audio_buffer(_: &Engine) -> AudioBuffer {
                       .unwrap()
 }
 
+#[inline]
 pub fn get_event(_: &Engine) -> Option<GameThreadEvent> {
     match GAME_THREAD_RECEIVER.lock()
                                 .unwrap()
@@ -377,6 +389,7 @@ pub fn get_event(_: &Engine) -> Option<GameThreadEvent> {
     }
 }
 
+#[inline]
 pub fn get_event_block(_: &Engine) -> GameThreadEvent {
     GAME_THREAD_RECEIVER.lock()
                         .unwrap()
@@ -386,6 +399,7 @@ pub fn get_event_block(_: &Engine) -> GameThreadEvent {
                         .unwrap()
 }
 
+#[inline]
 pub fn capture(_: &Engine, buf: VideoBuffer, times: usize) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
@@ -395,6 +409,7 @@ pub fn capture(_: &Engine, buf: VideoBuffer, times: usize) {
                           .unwrap();
 }
 
+#[inline]
 pub fn capture_audio(_: &Engine, buf: AudioBuffer) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
@@ -404,10 +419,12 @@ pub fn capture_audio(_: &Engine, buf: AudioBuffer) {
                           .unwrap();
 }
 
+#[inline]
 pub fn is_capturing() -> bool {
     *CAPTURING.read().unwrap()
 }
 
+#[inline]
 pub fn get_capture_parameters(engine: &Engine) -> &CaptureParameters {
     engine.data().capture_parameters.as_ref().unwrap()
 }
@@ -485,8 +502,15 @@ fn parse_fps(string: &str) -> Option<Rational> {
 }
 
 /// Parses the given string into a valid exposure value.
+#[inline]
 fn parse_exposure(string: &str) -> Result<f64> {
-    string.parse().chain_err(|| "could not convert the string to a floating point value").and_then(|x| if x > 0f64 && x<= 1f64 { Ok(x) } else { bail!("allowed exposure values range from 0 (non-inclusive) to 1 (inclusive)") })
+    string.parse()
+          .chain_err(|| "could not convert the string to a floating point value")
+          .and_then(|x| if x > 0f64 && x <= 1f64 {
+        Ok(x)
+    } else {
+        bail!("allowed exposure values range from 0 (non-inclusive) to 1 (inclusive)")
+    })
 }
 
 macro_rules! to_string {
@@ -502,6 +526,7 @@ macro_rules! parse {
 }
 
 /// Parses the CVar values into `EncoderParameters`.
+#[inline]
 fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
     Ok(EncoderParameters {
            audio_bitrate: parse!(engine, cap_audio_bitrate),
@@ -521,6 +546,7 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
 }
 
 /// Parses the CVar values into `CaptureParameters`.
+#[inline]
 fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
     Ok(CaptureParameters {
            sampling_exposure: parse_exposure(&to_string!(engine, cap_exposure))

@@ -69,36 +69,43 @@ impl Engine {
     ///
     /// # Safety
     /// Unsafe because this function should only be called from the main game thread.
+    #[inline]
     pub unsafe fn new() -> Self {
         Engine { _private: PhantomData }
     }
 
     /// Returns a mutable reference to the main thread global variables.
+    #[inline]
     pub fn data(&self) -> &mut MainThreadData {
         unsafe { &mut MAIN_THREAD_DATA.data }
     }
 
     /// Returns an iterator over the console command arguments.
+    #[inline]
     pub fn args(&self) -> command::Args {
         command::Args::new(self)
     }
 
     /// Prints the given string to the game console.
+    #[inline]
     pub fn con_print(&self, string: &str) {
         unsafe { hw::con_print(string) }
     }
 
     /// Returns the number of console command arguments.
+    #[inline]
     pub fn cmd_argc(&self) -> u32 {
         unsafe { hw::cmd_argc() }
     }
 
     /// Returns the console command argument with the given index.
+    #[inline]
     pub fn cmd_argv(&self, index: u32) -> String {
         unsafe { hw::cmd_argv(index) }
     }
 
     /// Registers the given console variable.
+    #[inline]
     pub fn register_variable(&mut self, cvar: &CVar) -> Result<()> {
         let mut engine_cvar = self.get_engine_cvar(cvar);
 
@@ -116,6 +123,7 @@ impl Engine {
     ///
     /// Takes a mutable reference to Engine to statically ensure
     /// that no engine functions are called while the engine CVar reference is valid.
+    #[inline]
     pub fn get_engine_cvar(&mut self, cvar: &CVar) -> EngineCVarGuard {
         EngineCVarGuard {
             engine_cvar: unsafe { cvar.get_engine_cvar() },
@@ -127,12 +135,14 @@ impl Engine {
 impl<'a> Deref for EngineCVarGuard<'a> {
     type Target = cvar_t;
 
+    #[inline]
     fn deref(&self) -> &cvar_t {
         self.engine_cvar
     }
 }
 
 impl<'a> DerefMut for EngineCVarGuard<'a> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut cvar_t {
         self.engine_cvar
     }
