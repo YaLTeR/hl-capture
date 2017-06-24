@@ -13,9 +13,6 @@ pub struct SamplingConverter {
 
     /// The target time_base.
     time_base: f64,
-
-    /// How many times the current frame should be output.
-    frames: usize,
 }
 
 impl SamplingConverter {
@@ -25,7 +22,6 @@ impl SamplingConverter {
         Self {
             remainder: 0f64,
             time_base,
-            frames: 0,
         }
     }
 }
@@ -41,10 +37,10 @@ impl FPSConverter for SamplingConverter {
 
         // Push this frame as long as it takes up the most of the video frame.
         // Remainder is > -0.5 at all times.
-        self.frames = (self.remainder + 0.5) as usize;
-        self.remainder -= self.frames as f64;
+        let frames = (self.remainder + 0.5) as usize;
+        self.remainder -= frames as f64;
 
-        if self.frames > 0 {
+        if frames > 0 {
             let frame_capture = capture(engine);
 
             let (w, h) = hw::get_resolution(engine);
@@ -74,7 +70,7 @@ impl FPSConverter for SamplingConverter {
                 }
             }
 
-            capture::capture(engine, buf, self.frames);
+            capture::capture(engine, buf, frames);
         }
     }
 }
