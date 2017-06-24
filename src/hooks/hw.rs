@@ -275,7 +275,14 @@ pub unsafe extern "C" fn GL_SetMode(mainwindow: c_int,
                                     pszDriver: *const c_char,
                                     pszCmdLine: *const c_char)
                                     -> c_int {
-    real!(GL_SetMode)(mainwindow, pmaindc, pbaseRC, fD3D, pszDriver, pszCmdLine)
+    let engine = Engine::new();
+    engine.data().inside_gl_setmode = true;
+
+    let rv = real!(GL_SetMode)(mainwindow, pmaindc, pbaseRC, fD3D, pszDriver, pszCmdLine);
+
+    engine.data().inside_gl_setmode = false;
+
+    rv
 }
 
 /// Calculates the frame time and limits the FPS.
@@ -453,6 +460,13 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 /// Returns whether the game is running in windowed mode.
 #[no_mangle]
 pub unsafe fn VideoMode_IsWindowed() -> c_int {
+    let engine = Engine::new();
+
+    // Force FBO usage.
+    if engine.data().inside_gl_setmode {
+        return 0;
+    }
+
     real!(VideoMode_IsWindowed)()
 }
 
