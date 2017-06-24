@@ -12,6 +12,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+lto = true
 
 [dependencies]
 error-chain = "0.10"
