@@ -241,7 +241,7 @@ impl SamplingConverterPrivate {
     /// This should be called after an engine restart.
     fn restore_ocl_data(&mut self, engine: &Engine) {
         if self.ocl_runtime_data.is_some() {
-            return;
+            panic!("tried to restore already existing OpenCL data");
         }
 
         let ocl_data = OclRuntimeData::new(engine, self.video_resolution)
