@@ -6,6 +6,7 @@ use ocl;
 use super::*;
 use capture;
 use hooks::hw::FrameCapture;
+use manual_free::ManualFree;
 
 pub struct SamplingConverter {
     /// Difference, in video frames, between how much time passed in-game and how much video we
@@ -16,7 +17,7 @@ pub struct SamplingConverter {
     time_base: f64,
 
     /// Data with a destructor.
-    private: *mut SamplingConverterPrivate,
+    private: ManualFree<SamplingConverterPrivate>,
 }
 
 struct SamplingConverterPrivate {
@@ -38,14 +39,13 @@ impl SamplingConverter {
         Self {
             remainder: 0f64,
             time_base,
-            private: Box::into_raw(Box::new(SamplingConverterPrivate::new(engine,
-                                                                          video_resolution))),
+            private: ManualFree::new(SamplingConverterPrivate::new(engine, video_resolution)),
         }
     }
 
     #[inline]
     pub fn free(&mut self) {
-        drop(unsafe { Box::from_raw(self.private) });
+        self.private.free();
     }
 }
 
@@ -57,7 +57,6 @@ impl FPSConverter for SamplingConverter {
         assert!(frametime >= 0.0f64);
 
         let frame_capture = capture(engine);
-        let mut private = unsafe { self.private.as_mut().unwrap() };
 
         let old_remainder = self.remainder;
         self.remainder += frametime / self.time_base;
@@ -77,11 +76,11 @@ impl FPSConverter for SamplingConverter {
                 FrameCapture::OpenCL(ocl_gl_texture) => {
                     weighted_image_add(engine,
                                        ocl_gl_texture.as_ref(),
-                                       private.src_buffer(),
-                                       private.dst_buffer(),
+                                       self.private.src_buffer(),
+                                       self.private.dst_buffer(),
                                        weight as f32);
 
-                    private.switch_buffer_index();
+                    self.private.switch_buffer_index();
                 }
             }
         } else {
@@ -95,18 +94,18 @@ impl FPSConverter for SamplingConverter {
                 FrameCapture::OpenCL(ocl_gl_texture) => {
                     weighted_image_add(engine,
                                        ocl_gl_texture.as_ref(),
-                                       private.src_buffer(),
-                                       private.output_image(),
+                                       self.private.src_buffer(),
+                                       self.private.output_image(),
                                        weight as f32);
 
-                    fill_with_black(engine, private.dst_buffer());
+                    fill_with_black(engine, self.private.dst_buffer());
 
-                    private.switch_buffer_index();
+                    self.private.switch_buffer_index();
 
                     // Output the frame.
                     let (w, h) = hw::get_resolution(engine);
                     let mut buf = capture::get_buffer(engine, (w, h));
-                    hw::read_ocl_image_into_buf(engine, private.output_image(), &mut buf);
+                    hw::read_ocl_image_into_buf(engine, self.private.output_image(), &mut buf);
                     capture::capture(engine, buf, 1);
 
                     self.remainder -= 1f64;
@@ -125,12 +124,12 @@ impl FPSConverter for SamplingConverter {
                     if self.remainder > (1f64 - exposure) {
                         weighted_image_add(engine,
                                            ocl_gl_texture.as_ref(),
-                                           private.src_buffer(),
-                                           private.dst_buffer(),
+                                           self.private.src_buffer(),
+                                           self.private.dst_buffer(),
                                            (((1f64 - exposure) - self.remainder) *
                                                 (1f64 / exposure)) as
                                                f32);
-                        private.switch_buffer_index();
+                        self.private.switch_buffer_index();
                     }
                 }
             }
