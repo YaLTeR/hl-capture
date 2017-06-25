@@ -31,6 +31,12 @@ struct SamplingConverterPrivate {
 
     /// The video resolution.
     video_resolution: (u32, u32),
+
+    /// The OpenGL sampling buffer.
+    gl_sampling_buffer: Vec<f32>,
+
+    /// The OpenGL read buffer.
+    gl_read_buffer: Vec<u8>,
 }
 
 struct OclRuntimeData {
@@ -89,17 +95,41 @@ impl FPSConverter for SamplingConverter {
 
             match frame_capture {
                 FrameCapture::OpenGL => {
-                    unimplemented!();
+                    let (w, h) = self.private.video_resolution;
+                    self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
+                    self.private
+                        .gl_sampling_buffer
+                        .resize((w * h * 3) as usize, 0f32);
+
+                    unsafe {
+                        // Our buffer expects 1-byte alignment.
+                        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+
+                        // Get the pixels!
+                        gl::ReadPixels(0,
+                                       0,
+                                       w as GLsizei,
+                                       h as GLsizei,
+                                       gl::RGB,
+                                       gl::UNSIGNED_BYTE,
+                                       self.private.gl_read_buffer.as_mut_slice().as_mut_ptr() as
+                                           _);
+                    }
+
+                    let private: &mut SamplingConverterPrivate = &mut self.private;
+                    weighted_image_add(&mut private.gl_sampling_buffer,
+                                       &private.gl_read_buffer,
+                                       weight as f32);
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
                     let ocl_data = self.private.get_ocl_data(engine).unwrap();
 
-                    weighted_image_add(engine,
-                                       ocl_gl_texture.as_ref(),
-                                       ocl_data.src_buffer(),
-                                       ocl_data.dst_buffer(),
-                                       weight as f32);
+                    ocl_weighted_image_add(engine,
+                                           ocl_gl_texture.as_ref(),
+                                           ocl_data.src_buffer(),
+                                           ocl_data.dst_buffer(),
+                                           weight as f32);
 
                     ocl_data.switch_buffer_index();
                 }
@@ -109,19 +139,72 @@ impl FPSConverter for SamplingConverter {
 
             match frame_capture {
                 FrameCapture::OpenGL => {
-                    unimplemented!();
+                    let (w, h) = self.private.video_resolution;
+                    self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
+                    self.private
+                        .gl_sampling_buffer
+                        .resize((w * h * 3) as usize, 0f32);
+
+                    unsafe {
+                        // Our buffer expects 1-byte alignment.
+                        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+
+                        // Get the pixels!
+                        gl::ReadPixels(0,
+                                       0,
+                                       w as GLsizei,
+                                       h as GLsizei,
+                                       gl::RGB,
+                                       gl::UNSIGNED_BYTE,
+                                       self.private.gl_read_buffer.as_mut_slice().as_mut_ptr() as
+                                           _);
+                    }
+
+                    let mut buf = capture::get_buffer(engine, (w, h));
+                    buf.set_format(format::Pixel::RGB24);
+                    weighted_image_add_to(&self.private.gl_sampling_buffer,
+                                          &self.private.gl_read_buffer,
+                                          buf.as_mut_slice(),
+                                          weight as f32);
+                    capture::capture(engine, buf, 1);
+
+                    fill_with_black(&mut self.private.gl_sampling_buffer);
+
+                    self.remainder -= 1f64;
+
+                    // Output it more times if needed.
+                    let additional_frames = self.remainder as usize;
+                    if additional_frames > 0 {
+                        let mut buf = capture::get_buffer(engine, (w, h));
+                        buf.set_format(format::Pixel::RGB24);
+                        buf.as_mut_slice()
+                           .copy_from_slice(&self.private.gl_read_buffer);
+                        capture::capture(engine, buf, additional_frames);
+
+                        self.remainder -= additional_frames as f64;
+                    }
+
+                    // Add the remaining image into the buffer.
+                    if self.remainder > (1f64 - exposure) {
+                        let private: &mut SamplingConverterPrivate = &mut self.private;
+                        weighted_image_add(&mut private.gl_sampling_buffer,
+                                           &private.gl_read_buffer,
+                                           (((1f64 - exposure) - self.remainder) *
+                                                (1f64 / exposure)) as
+                                               f32);
+                    }
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
                     let ocl_data = self.private.get_ocl_data(engine).unwrap();
 
-                    weighted_image_add(engine,
-                                       ocl_gl_texture.as_ref(),
-                                       ocl_data.src_buffer(),
-                                       ocl_data.output_image(),
-                                       weight as f32);
+                    ocl_weighted_image_add(engine,
+                                           ocl_gl_texture.as_ref(),
+                                           ocl_data.src_buffer(),
+                                           ocl_data.output_image(),
+                                           weight as f32);
 
-                    fill_with_black(engine, ocl_data.dst_buffer());
+                    ocl_fill_with_black(engine, ocl_data.dst_buffer());
 
                     ocl_data.switch_buffer_index();
 
@@ -145,48 +228,18 @@ impl FPSConverter for SamplingConverter {
 
                     // Add the remaining image into the buffer.
                     if self.remainder > (1f64 - exposure) {
-                        weighted_image_add(engine,
-                                           ocl_gl_texture.as_ref(),
-                                           ocl_data.src_buffer(),
-                                           ocl_data.dst_buffer(),
-                                           (((1f64 - exposure) - self.remainder) *
-                                                (1f64 / exposure)) as
-                                               f32);
+                        ocl_weighted_image_add(engine,
+                                               ocl_gl_texture.as_ref(),
+                                               ocl_data.src_buffer(),
+                                               ocl_data.dst_buffer(),
+                                               (((1f64 - exposure) - self.remainder) *
+                                                    (1f64 / exposure)) as
+                                                   f32);
                         ocl_data.switch_buffer_index();
                     }
                 }
             }
         }
-
-
-        // let (w, h) = hw::get_resolution(engine);
-        // let mut buf = capture::get_buffer(engine, (w, h));
-        //
-        // match frame_capture {
-        //     FrameCapture::OpenGL => {
-        //         buf.set_format(format::Pixel::RGB24);
-        //
-        //         unsafe {
-        //             // Our buffer expects 1-byte alignment.
-        //             gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-        //
-        //             // Get the pixels!
-        //             gl::ReadPixels(0,
-        //                            0,
-        //                            w as GLsizei,
-        //                            h as GLsizei,
-        //                            gl::RGB,
-        //                            gl::UNSIGNED_BYTE,
-        //                            buf.as_mut_slice().as_mut_ptr() as _);
-        //         }
-        //     }
-        //
-        //     FrameCapture::OpenCL(ocl_gl_texture) => {
-        //         hw::read_ocl_image_into_buf(engine, &ocl_gl_texture, &mut buf);
-        //     }
-        // }
-        //
-        // capture::capture(engine, buf, frames);
     }
 }
 
@@ -197,6 +250,8 @@ impl SamplingConverterPrivate {
             ocl_runtime_data: Some(OclRuntimeData::new(engine, video_resolution)),
             ocl_backup_buffer: None,
             video_resolution,
+            gl_sampling_buffer: Vec::new(),
+            gl_read_buffer: Vec::new(),
         }
     }
 
@@ -213,11 +268,11 @@ impl SamplingConverterPrivate {
     fn backup_and_free_ocl_data(&mut self, engine: &Engine) {
         let set_to_none = if let Some(Some(ref ocl_data)) = self.ocl_runtime_data {
             // Copy the src buffer into the output image.
-            weighted_image_add(engine,
-                               ocl_data.dst_buffer(),
-                               ocl_data.src_buffer(),
-                               ocl_data.output_image(),
-                               0f32);
+            ocl_weighted_image_add(engine,
+                                   ocl_data.dst_buffer(),
+                                   ocl_data.src_buffer(),
+                                   ocl_data.output_image(),
+                                   0f32);
 
             let image = ocl_data.output_image();
 
@@ -261,11 +316,11 @@ impl SamplingConverterPrivate {
                   .expect("image.write()");
 
         // Copy the backup buffer into the src buffer.
-        weighted_image_add(engine,
-                           ocl_data.dst_buffer(),
-                           &temp_image,
-                           ocl_data.src_buffer(),
-                           0f32);
+        ocl_weighted_image_add(engine,
+                               ocl_data.dst_buffer(),
+                               &temp_image,
+                               ocl_data.src_buffer(),
+                               0f32);
 
         self.ocl_runtime_data = Some(Some(ocl_data));
     }
@@ -304,7 +359,7 @@ impl OclRuntimeData {
                 ocl_current_buffer_index: 0,
             };
 
-            fill_with_black(engine, rv.src_buffer());
+            ocl_fill_with_black(engine, rv.src_buffer());
 
             rv
         })
@@ -332,11 +387,11 @@ impl OclRuntimeData {
 }
 
 #[inline]
-fn weighted_image_add<T: OclPrm, U: OclPrm, V: OclPrm>(engine: &Engine,
-                                                       src: &ocl::Image<T>,
-                                                       buf: &ocl::Image<U>,
-                                                       dst: &ocl::Image<V>,
-                                                       weight: f32) {
+fn ocl_weighted_image_add<T: OclPrm, U: OclPrm, V: OclPrm>(engine: &Engine,
+                                                           src: &ocl::Image<T>,
+                                                           buf: &ocl::Image<U>,
+                                                           dst: &ocl::Image<V>,
+                                                           weight: f32) {
     let pro_que = hw::get_pro_que(engine).unwrap();
 
     let kernel = pro_que.create_kernel("weighted_image_add")
@@ -351,7 +406,7 @@ fn weighted_image_add<T: OclPrm, U: OclPrm, V: OclPrm>(engine: &Engine,
 }
 
 #[inline]
-fn fill_with_black<T: OclPrm>(engine: &Engine, image: &ocl::Image<T>) {
+fn ocl_fill_with_black<T: OclPrm>(engine: &Engine, image: &ocl::Image<T>) {
     let pro_que = hw::get_pro_que(engine).unwrap();
 
     let kernel = pro_que.create_kernel("fill_with_black")
@@ -360,4 +415,30 @@ fn fill_with_black<T: OclPrm>(engine: &Engine, image: &ocl::Image<T>) {
                         .arg_img(image);
 
     kernel.enq().expect("sampling kernel enq()");
+}
+
+#[inline]
+fn weighted_image_add(buf: &mut [f32], image: &[u8], weight: f32) {
+    assert!(buf.len() == image.len());
+
+    for i in 0..buf.len() {
+        buf[i] += image[i] as f32 * weight;
+    }
+}
+
+#[inline]
+fn weighted_image_add_to(buf: &[f32], image: &[u8], dst: &mut [u8], weight: f32) {
+    assert!(buf.len() == image.len());
+    assert!(buf.len() == dst.len());
+
+    for i in 0..buf.len() {
+        dst[i] = (buf[i] + image[i] as f32 * weight).round() as u8;
+    }
+}
+
+#[inline]
+fn fill_with_black(buf: &mut [f32]) {
+    for i in 0..buf.len() {
+        buf[i] = 0f32;
+    }
 }
