@@ -223,6 +223,10 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                     launcherFactory,
                                     filesystemFactory);
 
+    if let Some(FPSConverters::Sampling(ref mut sampling_conv)) = engine.data().fps_converter {
+        sampling_conv.backup_and_free_ocl_data(&engine);
+    }
+
     if let Some(Some(buffers)) = engine.data().ocl_yuv_buffers.take() {
         drop(Box::from_raw(buffers));
     }
@@ -694,13 +698,13 @@ fn build_ocl_buffer(engine: &Engine,
 }
 
 /// Builds an ocl `Image` with the specified dimensions.
-pub fn build_ocl_image(engine: &Engine,
-                       pro_que: &ocl::ProQue,
-                       mem_flags: ocl::MemFlags,
-                       data_type: ocl::enums::ImageChannelDataType,
-                       dims: ocl::SpatialDims)
-                       -> Option<ocl::Image<u8>> {
-    ocl::Image::<u8>::builder()
+pub fn build_ocl_image<T: ocl::OclPrm>(engine: &Engine,
+                                       pro_que: &ocl::ProQue,
+                                       mem_flags: ocl::MemFlags,
+                                       data_type: ocl::enums::ImageChannelDataType,
+                                       dims: ocl::SpatialDims)
+                                       -> Option<ocl::Image<T>> {
+    ocl::Image::<T>::builder()
         .channel_order(ocl::enums::ImageChannelOrder::Rgba)
         .channel_data_type(data_type)
         .image_type(ocl::enums::MemObjectType::Image2d)
@@ -805,9 +809,9 @@ fn capture_frame(engine: &Engine) -> FrameCapture {
 }
 
 /// Reads the given `ocl::Image` into the buffer.
-pub fn read_ocl_image_into_buf(engine: &Engine,
-                               image: &ocl::Image<u8>,
-                               buf: &mut capture::VideoBuffer) {
+pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
+                                               image: &ocl::Image<T>,
+                                               buf: &mut capture::VideoBuffer) {
     let pro_que = get_pro_que(engine).unwrap();
 
     let yuv_buffers = if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
@@ -845,7 +849,20 @@ pub fn read_ocl_image_into_buf(engine: &Engine,
     } else {
         buf.set_format(format::Pixel::RGBA);
 
-        image.read(buf.as_mut_slice()).enq().expect("image.read()");
+        let ocl_buffer = build_ocl_buffer(engine, pro_que, buf.as_mut_slice().len())
+            .expect("OpenCL buffer build");
+
+        let kernel = pro_que.create_kernel("rgba_to_uint8_rgba_buffer")
+                            .unwrap()
+                            .gws(image.dims())
+                            .arg_img(image)
+                            .arg_buf(&ocl_buffer);
+
+        kernel.enq().expect("kernel.enq()");
+
+        ocl_buffer.read(buf.as_mut_slice())
+                  .enq()
+                  .expect("buffer.read()");
     }
 }
 

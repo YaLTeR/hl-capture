@@ -1,7 +1,7 @@
 use ffmpeg::format;
 use gl;
 use gl::types::*;
-use ocl;
+use ocl::{self, OclPrm};
 
 use super::*;
 use capture;
@@ -21,11 +21,24 @@ pub struct SamplingConverter {
 }
 
 struct SamplingConverterPrivate {
-    /// OpenCL buffer images.
-    ocl_buffers: [ocl::Image<u8>; 2],
+    /// Data used for OpenCL operations.
+    ///
+    /// This is Some(None) if OpenCL is unavailable and None during an engine restart.
+    ocl_runtime_data: Option<Option<OclRuntimeData>>,
 
-    /// OpenCL output image.
-    ocl_output_image: ocl::Image<u8>,
+    /// Pixels from the buffer are stored here when the engine restarts.
+    ocl_backup_buffer: Option<Vec<ocl::prm::Float>>,
+
+    /// The video resolution.
+    video_resolution: (u32, u32),
+}
+
+struct OclRuntimeData {
+    /// Buffer images.
+    ocl_buffers: [ocl::Image<ocl::prm::Float>; 2],
+
+    /// Output image.
+    ocl_output_image: ocl::Image<ocl::prm::Float>,
 
     /// Index of the last written to OpenCL buffer.
     ocl_current_buffer_index: usize,
@@ -41,6 +54,12 @@ impl SamplingConverter {
             time_base,
             private: ManualFree::new(SamplingConverterPrivate::new(engine, video_resolution)),
         }
+    }
+
+    /// This should be called before an engine restart.
+    #[inline]
+    pub fn backup_and_free_ocl_data(&mut self, engine: &Engine) {
+        self.private.backup_and_free_ocl_data(engine);
     }
 
     #[inline]
@@ -74,13 +93,15 @@ impl FPSConverter for SamplingConverter {
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
+                    let ocl_data = self.private.get_ocl_data(engine).unwrap();
+
                     weighted_image_add(engine,
                                        ocl_gl_texture.as_ref(),
-                                       self.private.src_buffer(),
-                                       self.private.dst_buffer(),
+                                       ocl_data.src_buffer(),
+                                       ocl_data.dst_buffer(),
                                        weight as f32);
 
-                    self.private.switch_buffer_index();
+                    ocl_data.switch_buffer_index();
                 }
             }
         } else {
@@ -92,20 +113,22 @@ impl FPSConverter for SamplingConverter {
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
+                    let ocl_data = self.private.get_ocl_data(engine).unwrap();
+
                     weighted_image_add(engine,
                                        ocl_gl_texture.as_ref(),
-                                       self.private.src_buffer(),
-                                       self.private.output_image(),
+                                       ocl_data.src_buffer(),
+                                       ocl_data.output_image(),
                                        weight as f32);
 
-                    fill_with_black(engine, self.private.dst_buffer());
+                    fill_with_black(engine, ocl_data.dst_buffer());
 
-                    self.private.switch_buffer_index();
+                    ocl_data.switch_buffer_index();
 
                     // Output the frame.
                     let (w, h) = hw::get_resolution(engine);
                     let mut buf = capture::get_buffer(engine, (w, h));
-                    hw::read_ocl_image_into_buf(engine, self.private.output_image(), &mut buf);
+                    hw::read_ocl_image_into_buf(engine, ocl_data.output_image(), &mut buf);
                     capture::capture(engine, buf, 1);
 
                     self.remainder -= 1f64;
@@ -124,12 +147,12 @@ impl FPSConverter for SamplingConverter {
                     if self.remainder > (1f64 - exposure) {
                         weighted_image_add(engine,
                                            ocl_gl_texture.as_ref(),
-                                           self.private.src_buffer(),
-                                           self.private.dst_buffer(),
+                                           ocl_data.src_buffer(),
+                                           ocl_data.dst_buffer(),
                                            (((1f64 - exposure) - self.remainder) *
                                                 (1f64 / exposure)) as
                                                f32);
-                        self.private.switch_buffer_index();
+                        ocl_data.switch_buffer_index();
                     }
                 }
             }
@@ -168,52 +191,137 @@ impl FPSConverter for SamplingConverter {
 }
 
 impl SamplingConverterPrivate {
-    fn new(engine: &Engine, (w, h): (u32, u32)) -> Self {
-        let pro_que = hw::get_pro_que(engine).expect("sampling currently requires OpenCL");
-
-        let rv = Self {
-            ocl_buffers: [
-                hw::build_ocl_image(engine,
-                                    &pro_que,
-                                    ocl::MemFlags::new().read_write().host_no_access(),
-                                    ocl::enums::ImageChannelDataType::Float,
-                                    (w, h).into())
-                .expect("building an OpenCL image"),
-                hw::build_ocl_image(engine,
-                                    &pro_que,
-                                    ocl::MemFlags::new().read_write().host_no_access(),
-                                    ocl::enums::ImageChannelDataType::Float,
-                                    (w, h).into())
-                .expect("building an OpenCL image"),
-            ],
-            ocl_output_image: hw::build_ocl_image(engine,
-                                                  &pro_que,
-                                                  ocl::MemFlags::new()
-                                                      .read_write()
-                                                      .host_read_only(),
-                                                  ocl::enums::ImageChannelDataType::Float,
-                                                  (w, h).into())
-                              .expect("building an OpenCL image"),
-            ocl_current_buffer_index: 0,
-        };
-
-        fill_with_black(engine, rv.src_buffer());
-
-        rv
+    #[inline]
+    fn new(engine: &Engine, video_resolution: (u32, u32)) -> Self {
+        Self {
+            ocl_runtime_data: Some(OclRuntimeData::new(engine, video_resolution)),
+            ocl_backup_buffer: None,
+            video_resolution,
+        }
     }
 
     #[inline]
-    fn src_buffer(&self) -> &ocl::Image<u8> {
+    fn get_ocl_data(&mut self, engine: &Engine) -> Option<&mut OclRuntimeData> {
+        if self.ocl_runtime_data.is_none() {
+            self.restore_ocl_data(engine);
+        }
+
+        self.ocl_runtime_data.as_mut().unwrap().as_mut()
+    }
+
+    /// This should be called before an engine restart.
+    fn backup_and_free_ocl_data(&mut self, engine: &Engine) {
+        let set_to_none = if let Some(Some(ref ocl_data)) = self.ocl_runtime_data {
+            // Copy the src buffer into the output image.
+            weighted_image_add(engine,
+                               ocl_data.dst_buffer(),
+                               ocl_data.src_buffer(),
+                               ocl_data.output_image(),
+                               0f32);
+
+            let image = ocl_data.output_image();
+
+            let mut backup_buffer = Vec::with_capacity(image.element_count());
+            backup_buffer.resize(image.element_count(), 0f32.into());
+
+            image.read(&mut backup_buffer).enq().expect("image.read()");
+
+            self.ocl_backup_buffer = Some(backup_buffer);
+
+            true
+        } else {
+            false
+        };
+
+        if set_to_none {
+            self.ocl_runtime_data = None;
+        }
+    }
+
+    /// This should be called after an engine restart.
+    fn restore_ocl_data(&mut self, engine: &Engine) {
+        if self.ocl_runtime_data.is_some() {
+            return;
+        }
+
+        let ocl_data = OclRuntimeData::new(engine, self.video_resolution)
+            .expect("changing from fullscreen to windowed is not supported");
+
+        let pro_que = hw::get_pro_que(engine).unwrap();
+        let temp_image = hw::build_ocl_image(engine,
+                                             &pro_que,
+                                             ocl::MemFlags::new().read_only().host_write_only(),
+                                             ocl::enums::ImageChannelDataType::Float,
+                                             self.video_resolution.into())
+                         .expect("building an OpenCL image");
+
+        let backup_buffer = self.ocl_backup_buffer.take().unwrap();
+        temp_image.write(&backup_buffer)
+                  .enq()
+                  .expect("image.write()");
+
+        // Copy the backup buffer into the src buffer.
+        weighted_image_add(engine,
+                           ocl_data.dst_buffer(),
+                           &temp_image,
+                           ocl_data.src_buffer(),
+                           0f32);
+
+        self.ocl_runtime_data = Some(Some(ocl_data));
+    }
+}
+
+impl OclRuntimeData {
+    fn new(engine: &Engine, (w, h): (u32, u32)) -> Option<Self> {
+        hw::get_pro_que(engine).map(|pro_que| {
+            let rv = Self {
+                ocl_buffers: [
+                    hw::build_ocl_image(engine,
+                                        &pro_que,
+                                        ocl::MemFlags::new()
+                                            .read_write()
+                                            .host_no_access(),
+                                        ocl::enums::ImageChannelDataType::Float,
+                                        (w, h).into())
+                    .expect("building an OpenCL image"),
+                    hw::build_ocl_image(engine,
+                                        &pro_que,
+                                        ocl::MemFlags::new()
+                                            .read_write()
+                                            .host_no_access(),
+                                        ocl::enums::ImageChannelDataType::Float,
+                                        (w, h).into())
+                    .expect("building an OpenCL image"),
+                ],
+                ocl_output_image: hw::build_ocl_image(engine,
+                                                      &pro_que,
+                                                      ocl::MemFlags::new()
+                                                          .read_write()
+                                                          .host_read_only(),
+                                                      ocl::enums::ImageChannelDataType::Float,
+                                                      (w, h).into())
+                                  .expect("building an OpenCL image"),
+                ocl_current_buffer_index: 0,
+            };
+
+            fill_with_black(engine, rv.src_buffer());
+
+            rv
+        })
+    }
+
+    #[inline]
+    fn src_buffer(&self) -> &ocl::Image<ocl::prm::Float> {
         &self.ocl_buffers[self.ocl_current_buffer_index]
     }
 
     #[inline]
-    fn dst_buffer(&self) -> &ocl::Image<u8> {
+    fn dst_buffer(&self) -> &ocl::Image<ocl::prm::Float> {
         &self.ocl_buffers[self.ocl_current_buffer_index ^ 1]
     }
 
     #[inline]
-    fn output_image(&self) -> &ocl::Image<u8> {
+    fn output_image(&self) -> &ocl::Image<ocl::prm::Float> {
         &self.ocl_output_image
     }
 
@@ -224,11 +332,11 @@ impl SamplingConverterPrivate {
 }
 
 #[inline]
-fn weighted_image_add(engine: &Engine,
-                      src: &ocl::Image<u8>,
-                      buf: &ocl::Image<u8>,
-                      dst: &ocl::Image<u8>,
-                      weight: f32) {
+fn weighted_image_add<T: OclPrm, U: OclPrm, V: OclPrm>(engine: &Engine,
+                                                       src: &ocl::Image<T>,
+                                                       buf: &ocl::Image<U>,
+                                                       dst: &ocl::Image<V>,
+                                                       weight: f32) {
     let pro_que = hw::get_pro_que(engine).unwrap();
 
     let kernel = pro_que.create_kernel("weighted_image_add")
@@ -243,7 +351,7 @@ fn weighted_image_add(engine: &Engine,
 }
 
 #[inline]
-fn fill_with_black(engine: &Engine, image: &ocl::Image<u8>) {
+fn fill_with_black<T: OclPrm>(engine: &Engine, image: &ocl::Image<T>) {
     let pro_que = hw::get_pro_que(engine).unwrap();
 
     let kernel = pro_que.create_kernel("fill_with_black")
