@@ -463,12 +463,12 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 /// Returns whether the game is running in windowed mode.
 #[no_mangle]
 pub unsafe fn VideoMode_IsWindowed() -> c_int {
-    let engine = Engine::new();
-
-    // Force FBO usage.
-    if engine.data().inside_gl_setmode {
-        return 0;
-    }
+    // let engine = Engine::new();
+    //
+    // // Force FBO usage.
+    // if engine.data().inside_gl_setmode {
+    //     return 0;
+    // }
 
     real!(VideoMode_IsWindowed)()
 }
