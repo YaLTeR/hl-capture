@@ -189,7 +189,7 @@ impl FPSConverter for SamplingConverter {
                         let private: &mut SamplingConverterPrivate = &mut self.private;
                         weighted_image_add(&mut private.gl_sampling_buffer,
                                            &private.gl_read_buffer,
-                                           (((1f64 - exposure) - self.remainder) *
+                                           ((self.remainder - (1f64 - exposure)) *
                                                 (1f64 / exposure)) as
                                                f32);
                     }
@@ -232,7 +232,7 @@ impl FPSConverter for SamplingConverter {
                                                ocl_gl_texture.as_ref(),
                                                ocl_data.src_buffer(),
                                                ocl_data.dst_buffer(),
-                                               (((1f64 - exposure) - self.remainder) *
+                                               ((self.remainder - (1f64 - exposure)) *
                                                     (1f64 / exposure)) as
                                                    f32);
                         ocl_data.switch_buffer_index();
