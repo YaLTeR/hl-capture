@@ -430,6 +430,10 @@ pub fn get_capture_parameters(engine: &Engine) -> &CaptureParameters {
 }
 
 pub fn stop(engine: &Engine) {
+    if !is_capturing() {
+        return;
+    }
+
     hw::capture_remaining_sound(engine);
 
     *CAPTURING.write().unwrap() = false;
@@ -560,6 +564,12 @@ fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
 }
 
 command!(cap_start, |mut engine| {
+    if is_capturing() {
+        engine.con_print("Already capturing, please stop the capturing with cap_stop \
+                          before starting it again.\n");
+        return;
+    }
+
     let parameters = match parse_encoder_parameters(&mut engine) {
         Ok(p) => p,
         Err(ref e) => {
