@@ -533,6 +533,10 @@ macro_rules! to_string {
 macro_rules! parse {
     ($engine:expr, $cvar:expr) => (
         $cvar.parse($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
+    );
+
+    ($engine:expr, $cvar:expr, $type:ty) => (
+        $cvar.parse::<$type>($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
     )
 }
 
@@ -540,8 +544,8 @@ macro_rules! parse {
 #[inline]
 fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
     Ok(EncoderParameters {
-           audio_bitrate: parse!(engine, cap_audio_bitrate),
-           video_bitrate: parse!(engine, cap_video_bitrate),
+           audio_bitrate: parse!(engine, cap_audio_bitrate, usize) * 1000,
+           video_bitrate: parse!(engine, cap_video_bitrate, usize) * 1000,
            crf: to_string!(engine, cap_crf),
            filename: to_string!(engine, cap_filename),
            muxer_settings: to_string!(engine, cap_muxer_settings),
@@ -626,7 +630,7 @@ command!(cap_stop, |engine| { stop(&engine); });
 
 // Encoder parameters.
 cvar!(cap_video_bitrate, "0");
-cvar!(cap_audio_bitrate, "320000");
+cvar!(cap_audio_bitrate, "256");
 cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");
