@@ -593,6 +593,18 @@ fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
        })
 }
 
+/// Starts and stops the encoder.
+fn test_encoder(parameters: &EncoderParameters) -> Result<()> {
+    let mut encoder = Encoder::start(&parameters)
+        .chain_err(|| {
+                       "could not start the encoder; check your terminal (Half-Life's \
+                        standard output) for ffmpeg messages"
+                   })?;
+    encoder.finish()
+           .chain_err(|| "could not finish the encoder")?;
+    Ok(())
+}
+
 command!(cap_start, |mut engine| {
     if is_capturing() {
         engine.con_print("Already capturing, please stop the capturing with cap_stop \
@@ -647,6 +659,30 @@ command!(cap_start, |mut engine| {
 
 command!(cap_stop, |engine| {
     stop(&engine);
+});
+
+command!(cap_test, |mut engine| {
+    let parameters = match parse_encoder_parameters(&mut engine) {
+        Ok(p) => p,
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
+
+    let _capture_parameters = match parse_capture_parameters(&mut engine) {
+        Ok(p) => Some(p),
+        Err(ref e) => {
+            engine.con_print(&format!("{}", e.display()));
+            return;
+        }
+    };
+
+    if let Err(ref e) = test_encoder(&parameters) {
+        engine.con_print(&format!("{}", e.display()));
+    } else {
+        engine.con_print("Capture was started and stopped successfully.\n");
+    }
 });
 
 // Encoder parameters.
