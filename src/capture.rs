@@ -569,7 +569,6 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
                .ok_or("invalid cap_fps")?,
            audio_encoder_settings: to_string!(engine, cap_audio_encoder_settings),
            video_encoder_settings: to_string!(engine, cap_video_encoder_settings),
-           vpx_cpu_usage: to_string!(engine, cap_vpx_cpu_usage),
            vpx_threads: to_string!(engine, cap_vpx_threads),
            video_resolution: hw::get_resolution(&engine),
        })
@@ -691,7 +690,6 @@ cvar!(cap_muxer_settings, "movflags=+faststart");
 cvar!(cap_pixel_format, "");
 cvar!(cap_audio_encoder_settings, "");
 cvar!(cap_video_encoder_settings, "");
-cvar!(cap_vpx_cpu_usage, "5");
 cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");
 

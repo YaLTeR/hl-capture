@@ -59,7 +59,6 @@ pub struct EncoderParameters {
     pub time_base: Rational,
     pub audio_encoder_settings: String,
     pub video_encoder_settings: String,
-    pub vpx_cpu_usage: String,
     pub vpx_threads: String,
     pub video_resolution: (u32, u32),
 }
@@ -150,7 +149,6 @@ impl Encoder {
                 [
                     ("crf", parameters.crf.as_str()),
                     ("preset", parameters.preset.as_str()),
-                    ("cpu-usage", parameters.vpx_cpu_usage.as_str()),
                     ("threads", parameters.vpx_threads.as_str()),
                 ]
                 .iter()
