@@ -260,15 +260,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
             }
 
             CaptureThreadEvent::CaptureStop => {
-                if let Some(mut encoder) = encoder.take() {
-                    if let Err(e) = encoder.finish() {
-                        event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
-                                    .unwrap();
-                    }
-
-                    // The encoder is dropped here.
-                }
-
+                stop_encoder(encoder.take(), event_sender);
                 drop_frames = true;
             }
 
@@ -280,11 +272,12 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 }
 
                 if let Err(e) = encode(&mut encoder, buffer, times, &mut frame) {
-                    *CAPTURING.write().unwrap() = false;
-                    drop_frames = true;
-
                     event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
                                 .unwrap();
+
+                    *CAPTURING.write().unwrap() = false;
+                    stop_encoder(encoder.take(), event_sender);
+                    drop_frames = true;
                 }
             }
 
@@ -301,11 +294,12 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 drop(audio_buf_sender);
 
                 if let Err(e) = result {
-                    *CAPTURING.write().unwrap() = false;
-                    drop_frames = true;
-
                     event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
                                 .unwrap();
+
+                    *CAPTURING.write().unwrap() = false;
+                    stop_encoder(encoder.take(), event_sender);
+                    drop_frames = true;
                 }
             }
         }
@@ -333,6 +327,18 @@ fn encode(encoder: &mut Option<Encoder>,
            .chain_err(|| "could not encode the frame")?;
 
     Ok(())
+}
+
+/// Properly closes and drops the encoder.
+fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>) {
+    if let Some(mut encoder) = encoder {
+        if let Err(e) = encoder.finish() {
+            event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
+                        .unwrap();
+        }
+
+        drop(encoder);
+    }
 }
 
 pub fn initialize(_: &Engine) {
