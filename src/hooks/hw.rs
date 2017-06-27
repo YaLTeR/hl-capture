@@ -805,14 +805,26 @@ fn capture_frame(engine: &Engine) -> FrameCapture {
     }
 }
 
+/// Gets the OpenCL RGB->YUV color conversion function name.
+fn ocl_color_conversion_func_name(target: format::Pixel) -> Option<&'static str> {
+    match target {
+        format::Pixel::YUV420P => Some("rgb_to_yuv420_601_limited"),
+        format::Pixel::YUV444P => Some("rgb_to_yuv444_601_limited"),
+        _ => None,
+    }
+}
+
 /// Reads the given `ocl::Image` into the buffer.
 pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
                                                image: &ocl::Image<T>,
                                                buf: &mut capture::VideoBuffer) {
     let pro_que = get_pro_que(engine).unwrap();
 
-    let yuv_buffers = if engine.data().encoder_pixel_format.unwrap() == format::Pixel::YUV420P {
-        buf.set_format(format::Pixel::YUV420P);
+    let encoder_pixel_format = engine.data().encoder_pixel_format.unwrap();
+    let func_name = ocl_color_conversion_func_name(encoder_pixel_format);
+
+    let yuv_buffers = if func_name.is_some() {
+        buf.set_format(encoder_pixel_format);
         let frame = buf.get_frame();
 
         get_yuv_buffers(&engine,
@@ -827,7 +839,7 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
 
         let &mut (ref Y_buf, ref U_buf, ref V_buf) = yuv_buffers.unwrap();
 
-        let kernel = pro_que.create_kernel("rgb_to_yuv420_601_limited")
+        let kernel = pro_que.create_kernel(func_name.unwrap())
                             .unwrap()
                             .gws(image.dims())
                             .arg_img(image)

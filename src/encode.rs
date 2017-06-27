@@ -126,7 +126,9 @@ impl Encoder {
                 }
             }
 
-            if encoder.format() == format::Pixel::YUV420P {
+            if encoder.format() == format::Pixel::YUV420P ||
+                encoder.format() == format::Pixel::YUV444P
+            {
                 // Write the color space and range into the output file so everything knows how to
                 // display it.
                 encoder.set_colorspace(color::Space::BT470BG);
