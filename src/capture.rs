@@ -564,9 +564,9 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
 #[inline]
 fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
     Ok(CaptureParameters {
-           sampling_exposure: parse_exposure(&to_string!(engine, cap_exposure))
-               .chain_err(|| "invalid cap_exposure")?,
-           sampling_time_base: parse_fps(&to_string!(engine, cap_sps)),
+           sampling_exposure: parse_exposure(&to_string!(engine, cap_sampling_exposure))
+               .chain_err(|| "invalid cap_sampling_exposure")?,
+           sampling_time_base: parse_fps(&to_string!(engine, cap_sampling_sps)),
            sound_extra: parse!(engine, cap_sound_extra),
            time_base: parse_fps(&to_string!(engine, cap_fps))
                .ok_or("invalid cap_fps")?,
@@ -642,7 +642,7 @@ cvar!(cap_vpx_threads, "8");
 cvar!(cap_x264_preset, "veryfast");
 
 // Capture parameters.
-cvar!(cap_exposure, "1.0");
-cvar!(cap_sps, "");
+cvar!(cap_sampling_exposure, "1.0");
+cvar!(cap_sampling_sps, "");
 cvar!(cap_sound_extra, "0");
 cvar!(cap_volume, "0.4");
