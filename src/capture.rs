@@ -242,7 +242,8 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
                 encoder = Encoder::start(&params)
-                    .chain_err(|| "could not start the encoder")
+                    .chain_err(|| "could not start the encoder; check your terminal (Half-Life's \
+                                   standard output) for ffmpeg messages")
                     .map_err(|ref e| {
                                  *CAPTURING.write().unwrap() = false;
                                  drop_frames = true;
