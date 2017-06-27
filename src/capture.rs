@@ -634,7 +634,7 @@ cvar!(cap_audio_bitrate, "256");
 cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");
-cvar!(cap_muxer_settings, "");
+cvar!(cap_muxer_settings, "movflags=+faststart");
 cvar!(cap_audio_encoder_settings, "");
 cvar!(cap_video_encoder_settings, "");
 cvar!(cap_vpx_cpu_usage, "5");
