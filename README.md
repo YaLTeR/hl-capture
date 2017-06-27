@@ -8,14 +8,19 @@ hl-capture is a tool for recording Half-Life videos on Linux, written in Rust. I
 
 hl-capture is designed to be **fast** and **convenient**. Video and sound are encoded with [FFMpeg](http://ffmpeg.org/) right away into any desirable format like `mp4`, `mkv` or `webm`. This, together with utilizing multiple threads and GPU-accelerated processing, makes hl-capture way faster than HLAE or Source's startmovie.
 
-## Goals
-- High capturing speed.
-- Compatibility with TASes, including those utilizing engine restarts and RNG manipulation.
+## Features
+- Fast video and sound capturing and encoding into almost any of the formats supported by FFMpeg.
+- GPU-accelerated resampling.
+- TAS compatibility out of the box, including engine restarts.
 
 ## Requirements
 - 32-bit FFMpeg libraries.
 - 32-bit SDL2.
 - 32-bit OpenCL.
+
+## Goals
+- High capturing speed.
+- Compatibility with TASes, including those utilizing engine restarts and RNG manipulation.
 
 ## Building
 1. Get stable Rust, then do `rustup target add i686-unknown-linux-gnu`
