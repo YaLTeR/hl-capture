@@ -54,6 +54,7 @@ pub struct EncoderParameters {
     pub crf: String,
     pub filename: String,
     pub muxer_settings: String,
+    pub pixel_format: format::Pixel,
     pub preset: String,
     pub time_base: Rational,
     pub audio_encoder_settings: String,
@@ -91,15 +92,13 @@ impl Encoder {
                             .contains(format::flag::GLOBAL_HEADER);
 
         let (video_encoder, video_stream_index) = {
-            let mut stream =
-                context.add_stream(video_codec)
-                       .chain_err(|| "could not add the video stream")?;
+            let mut stream = context.add_stream(video_codec)
+                                    .chain_err(|| "could not add the video stream")?;
 
-            let mut encoder =
-                stream.codec()
-                      .encoder()
-                      .video()
-                      .chain_err(|| "could not retrieve the video encoder")?;
+            let mut encoder = stream.codec()
+                                    .encoder()
+                                    .video()
+                                    .chain_err(|| "could not retrieve the video encoder")?;
 
             if global {
                 encoder.set_flags(codec::flag::GLOBAL_HEADER);
@@ -112,9 +111,19 @@ impl Encoder {
             encoder.set_bit_rate(parameters.video_bitrate);
 
             if let Some(mut formats) = video_codec.formats() {
-                encoder.set_format(formats.next().unwrap());
+                if parameters.pixel_format == format::Pixel::None {
+                    encoder.set_format(formats.next().unwrap());
+                } else {
+                    ensure!(formats.find(|&x| x == parameters.pixel_format).is_some(),
+                            "the selected video encoder does not support the chosen pixel format");
+                    encoder.set_format(parameters.pixel_format);
+                }
             } else {
-                encoder.set_format(format::Pixel::YUV420P);
+                if parameters.pixel_format == format::Pixel::None {
+                    encoder.set_format(format::Pixel::YUV420P);
+                } else {
+                    encoder.set_format(parameters.pixel_format);
+                }
             }
 
             if encoder.format() == format::Pixel::YUV420P {
@@ -160,15 +169,13 @@ impl Encoder {
         };
 
         let (audio_encoder, audio_stream_index) = {
-            let mut stream =
-                context.add_stream(audio_codec)
-                       .chain_err(|| "could not add the audio stream")?;
+            let mut stream = context.add_stream(audio_codec)
+                                    .chain_err(|| "could not add the audio stream")?;
 
-            let mut encoder =
-                stream.codec()
-                      .encoder()
-                      .audio()
-                      .chain_err(|| "could not retrieve the audio encoder")?;
+            let mut encoder = stream.codec()
+                                    .encoder()
+                                    .audio()
+                                    .chain_err(|| "could not retrieve the audio encoder")?;
 
             if global {
                 encoder.set_flags(codec::flag::GLOBAL_HEADER);

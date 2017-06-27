@@ -242,8 +242,10 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
                 encoder = Encoder::start(&params)
-                    .chain_err(|| "could not start the encoder; check your terminal (Half-Life's \
-                                   standard output) for ffmpeg messages")
+                    .chain_err(|| {
+                                   "could not start the encoder; check your terminal (Half-Life's \
+                                    standard output) for ffmpeg messages"
+                               })
                     .map_err(|ref e| {
                                  *CAPTURING.write().unwrap() = false;
                                  drop_frames = true;
@@ -524,6 +526,21 @@ fn parse_exposure(string: &str) -> Result<f64> {
     })
 }
 
+/// Parses the given string into a pixel format.
+#[inline]
+fn parse_pixel_format(string: &str) -> Result<format::Pixel> {
+    if string.is_empty() {
+        Ok(format::Pixel::None)
+    } else {
+        string.parse()
+              .chain_err(|| "could not convert the string to a pixel format")
+              .and_then(|x| {
+                            ensure!(x != format::Pixel::None, "unknown pixel format");
+                            Ok(x)
+                        })
+    }
+}
+
 macro_rules! to_string {
     ($engine:expr, $cvar:expr) => (
         $cvar.to_string($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
@@ -549,6 +566,8 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
            crf: to_string!(engine, cap_crf),
            filename: to_string!(engine, cap_filename),
            muxer_settings: to_string!(engine, cap_muxer_settings),
+           pixel_format: parse_pixel_format(&to_string!(engine, cap_pixel_format))
+               .chain_err(|| "invalid cap_pixel_format")?,
            preset: to_string!(engine, cap_x264_preset),
            time_base: parse_fps(&to_string!(engine, cap_fps))
                .ok_or("invalid cap_fps")?,
@@ -626,7 +645,9 @@ command!(cap_start, |mut engine| {
     hw::reset_sound_capture_remainder(&engine);
 });
 
-command!(cap_stop, |engine| { stop(&engine); });
+command!(cap_stop, |engine| {
+    stop(&engine);
+});
 
 // Encoder parameters.
 cvar!(cap_video_bitrate, "0");
@@ -635,6 +656,7 @@ cvar!(cap_crf, "15");
 cvar!(cap_filename, "capture.mp4");
 cvar!(cap_fps, "60");
 cvar!(cap_muxer_settings, "movflags=+faststart");
+cvar!(cap_pixel_format, "");
 cvar!(cap_audio_encoder_settings, "");
 cvar!(cap_video_encoder_settings, "");
 cvar!(cap_vpx_cpu_usage, "5");

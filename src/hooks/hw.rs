@@ -31,12 +31,11 @@ static mut POINTERS: Option<Pointers> = None;
 
 struct Functions {
     RunListenServer: unsafe extern "C" fn(*mut c_void,
-                                          *mut c_char,
-                                          *mut c_char,
-                                          *mut c_char,
-                                          *mut c_void,
-                                          *mut c_void)
-                                          -> c_int,
+                      *mut c_char,
+                      *mut c_char,
+                      *mut c_char,
+                      *mut c_void,
+                      *mut c_void) -> c_int,
 
     CL_Disconnect: unsafe extern "C" fn(),
     Cmd_AddCommand: unsafe extern "C" fn(*const c_char, *mut c_void),
@@ -46,12 +45,11 @@ struct Functions {
     Con_ToggleConsole_f: unsafe extern "C" fn(),
     Cvar_RegisterVariable: unsafe extern "C" fn(*mut cvar::cvar_t),
     GL_SetMode: unsafe extern "C" fn(c_int,
-                                     *mut c_void,
-                                     *mut c_void,
-                                     c_int,
-                                     *const c_char,
-                                     *const c_char)
-                                     -> c_int,
+                 *mut c_void,
+                 *mut c_void,
+                 c_int,
+                 *const c_char,
+                 *const c_char) -> c_int,
     Host_FilterTime: unsafe extern "C" fn(c_float) -> c_int,
     Key_Event: unsafe extern "C" fn(key: c_int, down: c_int),
     Memory_Init: unsafe extern "C" fn(*mut c_void, c_int),
@@ -541,9 +539,8 @@ unsafe fn register_cvars_and_commands() {
 
     let mut engine = Engine::new();
     for cvar in &cvar::CVARS {
-        if let Err(ref e) =
-            cvar.register(&mut engine)
-                .chain_err(|| "error registering a console variable")
+        if let Err(ref e) = cvar.register(&mut engine)
+                                .chain_err(|| "error registering a console variable")
         {
             panic!("{}", e.display());
         }
@@ -647,7 +644,7 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
     if engine.data().pro_que.is_none() {
         let report_opencl_error = |ref e: Error| {
             engine.con_print(&format!("Could not initialize OpenCL, proceeding without it. \
-                                           Error details:\n{}",
+                                       Error details:\n{}",
                                       e.display())
                               .replace('\0', "\\x00"));
         };

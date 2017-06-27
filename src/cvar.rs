@@ -76,9 +76,8 @@ impl CVar {
             }
 
             // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
-            let default_value_cstring =
-                CString::new(self.default_value)
-                    .chain_err(|| "could not convert default CVar value to CString")?;
+            let default_value_cstring = CString::new(self.default_value)
+                .chain_err(|| "could not convert default CVar value to CString")?;
 
             let ptr = default_value_cstring.into_raw();
             engine_cvar.string = ptr;
