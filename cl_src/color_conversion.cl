@@ -3,7 +3,7 @@ __kernel void rgba_to_uint8_rgba_buffer(read_only image2d_t src_image,
 	int2 coords = (int2)(get_global_id(0), get_global_id(1));
 	int w = get_image_width(src_image);
 
-	float4 pixel = read_imagef(src_image, coords);
+	float4 pixel = read_imagef(src_image, coords) * 255.0f;
 
 	int base = (coords.y * w + coords.x) * 4;
 	buf[base] = round(pixel.x);
