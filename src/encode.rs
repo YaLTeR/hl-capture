@@ -553,17 +553,60 @@ pub fn initialize() {
     });
 }
 
-command!(cap_set_video_encoder, |engine| {
+/// Outputs information about the selected video encoder.
+fn video_encoder_info(buf: &mut String) {
+    if let Some(encoder) = *VIDEO_ENCODER.lock().unwrap() {
+        let video = encoder.video().unwrap();
+
+        buf.push_str(&format!("Selected encoder: {}\n", encoder.name()));
+        buf.push_str(&format!("Description: {}\n", encoder.description()));
+        buf.push_str("Supported pixel formats: ");
+
+        if let Some(formats) = video.formats() {
+            buf.push_str(&format!("{:?}\n", formats.collect::<Vec<_>>()));
+        } else {
+            buf.push_str("any\n");
+        }
+    } else {
+        buf.push_str("No video encoder is currently selected.\n");
+    }
+}
+
+/// Outputs information about the selected audio encoder.
+fn audio_encoder_info(buf: &mut String) {
+    if let Some(encoder) = *AUDIO_ENCODER.lock().unwrap() {
+        let audio = encoder.audio().unwrap();
+
+        buf.push_str(&format!("Selected encoder: {}\n", encoder.name()));
+        buf.push_str(&format!("Description: {}\n", encoder.description()));
+
+        buf.push_str("Supported sample rates: ");
+
+        if let Some(rates) = audio.rates() {
+            buf.push_str(&format!("{:?}\n", rates.collect::<Vec<_>>()));
+        } else {
+            buf.push_str("any\n");
+        }
+    } else {
+        buf.push_str("No audio encoder is currently selected.\n");
+    }
+}
+
+command!(cap_video_encoder, |engine| {
     let mut args = engine.args();
 
     if args.len() != 2 {
         let mut buf = String::new();
 
-        buf.push_str("Usage:\n");
-        buf.push_str("    cap_set_video_encoder <encoder>\n");
+        video_encoder_info(&mut buf);
+
+        buf.push_str("\nUsage:\n");
+        buf.push_str("    cap_video_encoder <encoder>\n");
         buf.push_str("     - Set the video encoder by name.\n");
+        buf.push_str("    cap_video_encoder\n");
+        buf.push_str("     - Show information about the current video encoder.\n");
         buf.push_str("Example:\n");
-        buf.push_str("    cap_set_video_encoder libx264\n");
+        buf.push_str("    cap_video_encoder libx264\n");
 
         engine.con_print(&buf);
         return;
@@ -573,21 +616,11 @@ command!(cap_set_video_encoder, |engine| {
 
     if let Some(encoder) = encoder::find_by_name(&encoder_name) {
         if let Ok(video) = encoder.video() {
-            let mut buf = String::new();
-
-            buf.push_str(&format!("Selected encoder: {}\n", encoder_name));
-            buf.push_str(&format!("Description: {}\n", encoder.description()));
-            buf.push_str("Pixel formats: ");
-
-            if let Some(formats) = video.formats() {
-                buf.push_str(&format!("{:?}\n", formats.collect::<Vec<_>>()));
-            } else {
-                buf.push_str("any\n");
-            }
-
-            engine.con_print(&buf);
-
             *VIDEO_ENCODER.lock().unwrap() = Some(video);
+
+            let mut buf = String::new();
+            video_encoder_info(&mut buf);
+            engine.con_print(&buf);
         } else {
             engine.con_print(&format!("Invalid encoder type '{}'\n", encoder_name));
         }
@@ -596,17 +629,21 @@ command!(cap_set_video_encoder, |engine| {
     }
 });
 
-command!(cap_set_audio_encoder, |engine| {
+command!(cap_audio_encoder, |engine| {
     let mut args = engine.args();
 
     if args.len() != 2 {
         let mut buf = String::new();
 
-        buf.push_str("Usage:\n");
-        buf.push_str("    cap_set_audio_encoder <encoder>\n");
+        audio_encoder_info(&mut buf);
+
+        buf.push_str("\nUsage:\n");
+        buf.push_str("    cap_audio_encoder <encoder>\n");
         buf.push_str("     - Set the audio encoder by name.\n");
+        buf.push_str("    cap_audio_encoder\n");
+        buf.push_str("     - Show information about the current audio encoder.\n");
         buf.push_str("Example:\n");
-        buf.push_str("    cap_set_audio_encoder libmp3lame\n");
+        buf.push_str("    cap_audio_encoder aac\n");
 
         engine.con_print(&buf);
         return;
@@ -616,29 +653,11 @@ command!(cap_set_audio_encoder, |engine| {
 
     if let Some(encoder) = encoder::find_by_name(&encoder_name) {
         if let Ok(audio) = encoder.audio() {
-            let mut buf = String::new();
-
-            buf.push_str(&format!("Selected encoder: {}\n", encoder_name));
-            buf.push_str(&format!("Description: {}\n", encoder.description()));
-            buf.push_str("Sample formats: ");
-
-            if let Some(formats) = audio.formats() {
-                buf.push_str(&format!("{:?}\n", formats.collect::<Vec<_>>()));
-            } else {
-                buf.push_str("any\n");
-            }
-
-            buf.push_str("Sample rates: ");
-
-            if let Some(rates) = audio.rates() {
-                buf.push_str(&format!("{:?}\n", rates.collect::<Vec<_>>()));
-            } else {
-                buf.push_str("any\n");
-            }
-
-            engine.con_print(&buf);
-
             *AUDIO_ENCODER.lock().unwrap() = Some(audio);
+
+            let mut buf = String::new();
+            audio_encoder_info(&mut buf);
+            engine.con_print(&buf);
         } else {
             engine.con_print(&format!("Invalid encoder type '{}'\n", encoder_name));
         }
