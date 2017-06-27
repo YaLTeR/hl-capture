@@ -94,7 +94,7 @@ dependencies = [
 [[package]]
 name = "ffmpeg"
 version = "0.2.0-alpha.2"
-source = "git+https://github.com/yalter/rust-ffmpeg.git?branch=pixel-format-from-string#2ee08354bb35fedf1dad84dee010938392ceb37b"
+source = "git+https://github.com/yalter/rust-ffmpeg.git?branch=pixel-format-from-string#47cf78da8e5d99b02619ba7babf216c8e480a8e2"
 dependencies = [
  "bitflags 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ffmpeg-sys 3.2.1 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -534,10 +534,6 @@ fn parse_pixel_format(string: &str) -> Result<format::Pixel> {
     } else {
         string.parse()
               .chain_err(|| "could not convert the string to a pixel format")
-              .and_then(|x| {
-                            ensure!(x != format::Pixel::None, "unknown pixel format");
-                            Ok(x)
-                        })
     }
 }
 
