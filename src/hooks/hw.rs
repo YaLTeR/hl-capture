@@ -418,17 +418,12 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
     let engine = Engine::new();
 
     // Print all messages that happened.
-    loop {
-        match capture::get_event(&engine) {
-            Some(e) => {
-                match e {
-                    GameThreadEvent::Message(msg) => con_print(&msg),
-                    GameThreadEvent::EncoderPixelFormat(fmt) => {
-                        engine.data().encoder_pixel_format = Some(fmt)
-                    }
-                }
+    while let Some(e) = capture::get_event(&engine) {
+        match e {
+            GameThreadEvent::Message(msg) => con_print(&msg),
+            GameThreadEvent::EncoderPixelFormat(fmt) => {
+                engine.data().encoder_pixel_format = Some(fmt)
             }
-            None => break,
         }
     }
 
@@ -446,12 +441,12 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
         // Always capture sound.
         engine.data().capture_sound = true;
 
-        match engine.data().fps_converter.as_mut().unwrap() {
-            &mut FPSConverters::Simple(ref mut simple_conv) => {
+        match *engine.data().fps_converter.as_mut().unwrap() {
+            FPSConverters::Simple(ref mut simple_conv) => {
                 simple_conv.time_passed(&engine, *ptr!(host_frametime), capture_frame);
             }
 
-            &mut FPSConverters::Sampling(ref mut sampling_conv) => {
+            FPSConverters::Sampling(ref mut sampling_conv) => {
                 sampling_conv.time_passed(&engine, *ptr!(host_frametime), capture_frame);
             }
         }
@@ -757,9 +752,10 @@ fn get_yuv_buffers<'a>(engine: &Engine,
             // In most cases if one of the buffer sizes changes, the other do as well.
             if Y_buf.len() != Y_len || U_buf.len() != U_len || V_buf.len() != V_len {
                 // Drop the references first.
-                drop(Y_buf);
-                drop(U_buf);
-                drop(V_buf);
+                // This does nothing.
+                // drop(Y_buf);
+                // drop(U_buf);
+                // drop(V_buf);
 
                 // Now drop the buffers themselves.
                 drop(unsafe {
@@ -773,9 +769,10 @@ fn get_yuv_buffers<'a>(engine: &Engine,
                 buffers.map(|ptr| unsafe { ptr.as_mut() }.unwrap())
             } else {
                 // Drop the existing references.
-                drop(Y_buf);
-                drop(U_buf);
-                drop(V_buf);
+                // This does nothing.
+                // drop(Y_buf);
+                // drop(U_buf);
+                // drop(V_buf);
 
                 engine.data()
                       .ocl_yuv_buffers
@@ -793,15 +790,15 @@ fn get_yuv_buffers<'a>(engine: &Engine,
 fn capture_frame(engine: &Engine) -> FrameCapture {
     let texture = unsafe { *ptr!(s_BackBufferFBO) }.Tex;
     let pro_que = if texture != 0 {
-        get_pro_que(&engine)
+        get_pro_que(engine)
     } else {
         None
     };
 
     if let Some(pro_que) = pro_que {
-        let (w, h) = get_resolution(&engine);
+        let (w, h) = get_resolution(engine);
 
-        FrameCapture::OpenCL(OclGlTexture::new(&engine,
+        FrameCapture::OpenCL(OclGlTexture::new(engine,
                                                texture,
                                                pro_que.queue().clone(),
                                                (w, h).into()))
@@ -832,7 +829,7 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
         buf.set_format(encoder_pixel_format);
         let frame = buf.get_frame();
 
-        get_yuv_buffers(&engine,
+        get_yuv_buffers(engine,
                         pro_que,
                         (frame.data(0).len(), frame.data(1).len(), frame.data(2).len()))
     } else {

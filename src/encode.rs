@@ -113,7 +113,7 @@ impl Encoder {
                 if parameters.pixel_format == format::Pixel::None {
                     encoder.set_format(formats.next().unwrap());
                 } else {
-                    ensure!(formats.find(|&x| x == parameters.pixel_format).is_some(),
+                    ensure!(formats.any(|x| x == parameters.pixel_format),
                             "the selected video encoder does not support the chosen pixel format");
                     encoder.set_format(parameters.pixel_format);
                 }
@@ -310,7 +310,7 @@ impl Encoder {
             self.video_pts += 1;
 
             if self.video_encoder
-                   .encode(&frame, &mut self.packet)
+                   .encode(frame, &mut self.packet)
                    .chain_err(|| "could not encode the video frame")?
             {
                 self.packet
@@ -366,7 +366,7 @@ impl Encoder {
     }
 
     /// Encodes 16-bit signed interleaved 2-channel stereo sound.
-    pub fn take_audio(&mut self, samples: &Vec<(i16, i16)>) -> Result<()> {
+    pub fn take_audio(&mut self, samples: &[(i16, i16)]) -> Result<()> {
         let mut samples_pos = 0;
         while samples_pos < samples.len() {
             let available_samples = samples.len() - samples_pos;

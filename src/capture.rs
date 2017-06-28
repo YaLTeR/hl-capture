@@ -268,7 +268,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
             }
 
             CaptureThreadEvent::VideoFrame((buffer, times)) => {
-                let buffer = SendOnDrop::new(buffer, &video_buf_sender);
+                let buffer = SendOnDrop::new(buffer, video_buf_sender);
 
                 if drop_frames {
                     continue;
@@ -285,7 +285,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
             }
 
             CaptureThreadEvent::AudioFrame(buffer) => {
-                let buffer = SendOnDrop::new(buffer, &audio_buf_sender);
+                let buffer = SendOnDrop::new(buffer, audio_buf_sender);
 
                 if drop_frames {
                     continue;
@@ -294,7 +294,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 // Encode the audio.
                 let result = encoder.as_mut().unwrap().take_audio(buffer.data());
 
-                drop(audio_buf_sender);
+                drop(buffer);
 
                 if let Err(e) = result {
                     event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
@@ -570,7 +570,7 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
            audio_encoder_settings: to_string!(engine, cap_audio_encoder_settings),
            video_encoder_settings: to_string!(engine, cap_video_encoder_settings),
            vpx_threads: to_string!(engine, cap_vpx_threads),
-           video_resolution: hw::get_resolution(&engine),
+           video_resolution: hw::get_resolution(engine),
        })
 }
 
@@ -590,7 +590,7 @@ fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
 
 /// Starts and stops the encoder.
 fn test_encoder(parameters: &EncoderParameters) -> Result<()> {
-    let mut encoder = Encoder::start(&parameters)
+    let mut encoder = Encoder::start(parameters)
         .chain_err(|| {
                        "could not start the encoder; check your terminal (Half-Life's \
                         standard output) for ffmpeg messages"

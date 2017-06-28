@@ -276,7 +276,7 @@ impl SamplingConverterPrivate {
 
         let pro_que = hw::get_pro_que(engine).unwrap();
         let temp_image = hw::build_ocl_image(engine,
-                                             &pro_que,
+                                             pro_que,
                                              ocl::MemFlags::new().read_only().host_write_only(),
                                              ocl::enums::ImageChannelDataType::Float,
                                              self.video_resolution.into())
@@ -304,7 +304,7 @@ impl OclRuntimeData {
             let rv = Self {
                 ocl_buffers: [
                     hw::build_ocl_image(engine,
-                                        &pro_que,
+                                        pro_que,
                                         ocl::MemFlags::new()
                                             .read_write()
                                             .host_no_access(),
@@ -312,7 +312,7 @@ impl OclRuntimeData {
                                         (w, h).into())
                     .expect("building an OpenCL image"),
                     hw::build_ocl_image(engine,
-                                        &pro_que,
+                                        pro_que,
                                         ocl::MemFlags::new()
                                             .read_write()
                                             .host_no_access(),
@@ -321,7 +321,7 @@ impl OclRuntimeData {
                     .expect("building an OpenCL image"),
                 ],
                 ocl_output_image: hw::build_ocl_image(engine,
-                                                      &pro_que,
+                                                      pro_que,
                                                       ocl::MemFlags::new()
                                                           .read_write()
                                                           .host_read_only(),
@@ -391,7 +391,7 @@ fn ocl_fill_with_black<T: OclPrm>(engine: &Engine, image: &ocl::Image<T>) {
 
 #[inline]
 fn weighted_image_add(buf: &mut [f32], image: &[u8], weight: f32) {
-    assert!(buf.len() == image.len());
+    assert_eq!(buf.len(), image.len());
 
     for i in 0..buf.len() {
         buf[i] += image[i] as f32 * weight;
@@ -400,8 +400,8 @@ fn weighted_image_add(buf: &mut [f32], image: &[u8], weight: f32) {
 
 #[inline]
 fn weighted_image_add_to(buf: &[f32], image: &[u8], dst: &mut [u8], weight: f32) {
-    assert!(buf.len() == image.len());
-    assert!(buf.len() == dst.len());
+    assert_eq!(buf.len(), image.len());
+    assert_eq!(buf.len(), dst.len());
 
     for i in 0..buf.len() {
         dst[i] = (buf[i] + image[i] as f32 * weight).round() as u8;
