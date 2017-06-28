@@ -878,7 +878,7 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
 }
 
 /// Reads pixels into the buffer.
-pub fn read_pixels(_: &Engine, (w, h): (u32, u32), buf: &mut [u8]) {
+fn read_pixels(_: &Engine, (w, h): (u32, u32), buf: &mut [u8]) {
     unsafe {
         // Our buffer expects 1-byte alignment.
         gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
