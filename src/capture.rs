@@ -680,6 +680,13 @@ command!(cap_test, |mut engine| {
     }
 });
 
+command!(cap_version, |engine| {
+    engine.con_print(concat!(env!("CARGO_PKG_NAME"),
+                             " v",
+                             env!("CARGO_PKG_VERSION"),
+                             " by Ivan \"YaLTeR\" Molodetskikh\n"));
+});
+
 // Encoder parameters.
 cvar!(cap_video_bitrate, "0");
 cvar!(cap_audio_bitrate, "256");
