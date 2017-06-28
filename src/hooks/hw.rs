@@ -649,26 +649,31 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
                               .replace('\0', "\\x00"));
         };
 
-        let context = ocl::Context::builder()
-            .gl_context(sdl::get_current_context())
-            .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
-            .build()
-            .chain_err(|| "error building ocl::Context");
-
-        let pro_que = context.and_then(|ctx| {
-            ocl::ProQue::builder()
-                .context(ctx)
-                .prog_bldr(ocl::Program::builder()
-                               .src(include_str!("../../cl_src/color_conversion.cl"))
-                               .src(include_str!("../../cl_src/sampling.cl")))
+        if ocl::core::default_platform().is_err() {
+            report_opencl_error("no OpenCL platforms were found".into());
+            engine.data().pro_que = Some(None);
+        } else {
+            let context = ocl::Context::builder()
+                .gl_context(sdl::get_current_context())
+                .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
                 .build()
-                .chain_err(|| "error building ocl::ProQue")
-        })
-                             .map(|pro_que| Box::into_raw(Box::new(pro_que)))
-                             .map_err(report_opencl_error)
-                             .ok();
+                .chain_err(|| "error building ocl::Context");
 
-        engine.data().pro_que = Some(pro_que);
+            let pro_que = context.and_then(|ctx| {
+                ocl::ProQue::builder()
+                    .context(ctx)
+                    .prog_bldr(ocl::Program::builder()
+                                   .src(include_str!("../../cl_src/color_conversion.cl"))
+                                   .src(include_str!("../../cl_src/sampling.cl")))
+                    .build()
+                    .chain_err(|| "error building ocl::ProQue")
+            })
+                                 .map(|pro_que| Box::into_raw(Box::new(pro_que)))
+                                 .map_err(report_opencl_error)
+                                 .ok();
+
+            engine.data().pro_que = Some(pro_que);
+        }
     }
 
     engine.data()
