@@ -16,7 +16,7 @@ hl-capture is designed to be **fast** and **convenient**. Video and sound are en
 ## Requirements
 - 32-bit FFMpeg libraries.
 - 32-bit SDL2.
-- 32-bit OpenCL.
+- 32-bit OpenCL (look for something like ocl-icd).
 
 ## Usage
 Check the [wiki](https://github.com/YaLTeR/hl-capture/wiki/Installation-and-usage) for installation and usage instructions.
