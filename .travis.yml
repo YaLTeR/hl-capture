@@ -38,7 +38,8 @@ script:
 - mkdir -p target/i686-unknown-linux-gnu/debug/deps
 - cp $HOME/OpenCL/lib/libOpenCL.so* target/i686-unknown-linux-gnu/debug/deps/
 - cargo build --verbose
-- OUT_DIR=`cat out_dir` rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments"
+- bash env_vars.sh
+- rustdoc --no-defaults --passes "collapse-docs" --passes "unindent-comments"
   --crate-name hl_capture src/lib.rs --target i686-unknown-linux-gnu -o docs -L target/i686-unknown-linux-gnu/debug/deps
 - cp .travis/index.html docs/
 - cargo test --verbose

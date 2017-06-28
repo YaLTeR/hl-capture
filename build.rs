@@ -48,9 +48,11 @@ fn main() {
     let mut f = File::create(&dest_path).unwrap();
     write!(f, "{}", cvar_array).unwrap();
 
-    // Output OUT_DIR for rustdoc in Travis
-    let mut f = File::create("out_dir").unwrap();
-    write!(f, "{}", out_dir).unwrap();
+    // Output some env vars for rustdoc in Travis
+    let mut f = File::create("env_vars.sh").unwrap();
+    write!(f, "export OUT_DIR=\"{}\"\n", out_dir).unwrap();
+    write!(f, "export CARGO_PKG_NAME=\"{}\"\n", env::var("CARGO_PKG_NAME").unwrap()).unwrap();
+    write!(f, "export CARGO_PKG_VERSION=\"{}\"\n", env::var("CARGO_PKG_VERSION").unwrap()).unwrap();
 }
 
 struct Data {
