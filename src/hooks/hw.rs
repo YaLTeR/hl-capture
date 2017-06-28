@@ -85,7 +85,7 @@ pub struct OclGlTexture {
 }
 
 pub enum FrameCapture {
-    OpenGL,
+    OpenGL(fn(&Engine, (u32, u32), &mut [u8])),
     OpenCL(OclGlTexture),
 }
 
@@ -806,7 +806,7 @@ fn capture_frame(engine: &Engine) -> FrameCapture {
                                                pro_que.queue().clone(),
                                                (w, h).into()))
     } else {
-        FrameCapture::OpenGL
+        FrameCapture::OpenGL(read_pixels)
     }
 }
 
@@ -877,6 +877,23 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
         ocl_buffer.read(buf.as_mut_slice())
                   .enq()
                   .expect("buffer.read()");
+    }
+}
+
+/// Reads pixels into the buffer.
+pub fn read_pixels(_: &Engine, (w, h): (u32, u32), buf: &mut [u8]) {
+    unsafe {
+        // Our buffer expects 1-byte alignment.
+        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+
+        // Get the pixels!
+        gl::ReadPixels(0,
+                       0,
+                       w as GLsizei,
+                       h as GLsizei,
+                       gl::RGB,
+                       gl::UNSIGNED_BYTE,
+                       buf.as_mut_ptr() as _);
     }
 }
 

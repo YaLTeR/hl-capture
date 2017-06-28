@@ -1,6 +1,4 @@
 use ffmpeg::format;
-use gl;
-use gl::types::*;
 use ocl::{self, OclPrm};
 
 use super::*;
@@ -94,27 +92,14 @@ impl FPSConverter for SamplingConverter {
             let weight = (self.remainder - old_remainder.max(1f64 - exposure)) * (1f64 / exposure);
 
             match frame_capture {
-                FrameCapture::OpenGL => {
+                FrameCapture::OpenGL(read_pixels) => {
                     let (w, h) = self.private.video_resolution;
                     self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
                     self.private
                         .gl_sampling_buffer
                         .resize((w * h * 3) as usize, 0f32);
 
-                    unsafe {
-                        // Our buffer expects 1-byte alignment.
-                        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-
-                        // Get the pixels!
-                        gl::ReadPixels(0,
-                                       0,
-                                       w as GLsizei,
-                                       h as GLsizei,
-                                       gl::RGB,
-                                       gl::UNSIGNED_BYTE,
-                                       self.private.gl_read_buffer.as_mut_slice().as_mut_ptr() as
-                                           _);
-                    }
+                    read_pixels(engine, (w, h), &mut self.private.gl_read_buffer);
 
                     let private: &mut SamplingConverterPrivate = &mut self.private;
                     weighted_image_add(&mut private.gl_sampling_buffer,
@@ -138,27 +123,14 @@ impl FPSConverter for SamplingConverter {
             let weight = (1f64 - old_remainder.max(1f64 - exposure)) * (1f64 / exposure);
 
             match frame_capture {
-                FrameCapture::OpenGL => {
+                FrameCapture::OpenGL(read_pixels) => {
                     let (w, h) = self.private.video_resolution;
                     self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
                     self.private
                         .gl_sampling_buffer
                         .resize((w * h * 3) as usize, 0f32);
 
-                    unsafe {
-                        // Our buffer expects 1-byte alignment.
-                        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-
-                        // Get the pixels!
-                        gl::ReadPixels(0,
-                                       0,
-                                       w as GLsizei,
-                                       h as GLsizei,
-                                       gl::RGB,
-                                       gl::UNSIGNED_BYTE,
-                                       self.private.gl_read_buffer.as_mut_slice().as_mut_ptr() as
-                                           _);
-                    }
+                    read_pixels(engine, (w, h), &mut self.private.gl_read_buffer);
 
                     let mut buf = capture::get_buffer(engine, (w, h));
                     buf.set_format(format::Pixel::RGB24);

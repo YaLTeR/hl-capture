@@ -1,6 +1,4 @@
 use ffmpeg::format;
-use gl;
-use gl::types::*;
 
 use super::*;
 use capture;
@@ -48,22 +46,9 @@ impl FPSConverter for SimpleConverter {
             let mut buf = capture::get_buffer(engine, (w, h));
 
             match frame_capture {
-                FrameCapture::OpenGL => {
+                FrameCapture::OpenGL(read_pixels) => {
                     buf.set_format(format::Pixel::RGB24);
-
-                    unsafe {
-                        // Our buffer expects 1-byte alignment.
-                        gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
-
-                        // Get the pixels!
-                        gl::ReadPixels(0,
-                                       0,
-                                       w as GLsizei,
-                                       h as GLsizei,
-                                       gl::RGB,
-                                       gl::UNSIGNED_BYTE,
-                                       buf.as_mut_slice().as_mut_ptr() as _);
-                    }
+                    read_pixels(engine, (w, h), buf.as_mut_slice());
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
