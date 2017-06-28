@@ -3,7 +3,7 @@ name = "hl-capture"
 version = "0.1.0"
 dependencies = [
  "error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ffmpeg 0.2.0-alpha.2 (git+https://github.com/yalter/rust-ffmpeg.git?branch=pixel-format-from-string)",
+ "ffmpeg 0.2.0-alpha.2 (git+https://github.com/meh/rust-ffmpeg.git)",
  "fine_grained 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "gl 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "glx 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -94,7 +94,7 @@ dependencies = [
 [[package]]
 name = "ffmpeg"
 version = "0.2.0-alpha.2"
-source = "git+https://github.com/yalter/rust-ffmpeg.git?branch=pixel-format-from-string#47cf78da8e5d99b02619ba7babf216c8e480a8e2"
+source = "git+https://github.com/meh/rust-ffmpeg.git#8cf47c7ec6356a1d0a9cd53ffa67c424d2e800c7"
 dependencies = [
  "bitflags 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ffmpeg-sys 3.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -457,7 +457,7 @@ dependencies = [
 "checksum dbghelp-sys 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "97590ba53bcb8ac28279161ca943a924d1fd4a8fb3fa63302591647c4fc5b850"
 "checksum enum_primitive 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)" = "be4551092f4d519593039259a9ed8daedf0da12e5109c5280338073eaeb81180"
 "checksum error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d9435d864e017c3c6afeac1654189b06cdb491cf2ff73dbf0d73b0f292f42ff8"
-"checksum ffmpeg 0.2.0-alpha.2 (git+https://github.com/yalter/rust-ffmpeg.git?branch=pixel-format-from-string)" = "<none>"
+"checksum ffmpeg 0.2.0-alpha.2 (git+https://github.com/meh/rust-ffmpeg.git)" = "<none>"
 "checksum ffmpeg-sys 3.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "3bc605f74bf00541d47f241c03a42f2cedafaeb7175b456ce4659b9406931573"
 "checksum fine_grained 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)" = "a30057da23454fca94b4711981c174df6be7b019c3a787050e136ae26b79157f"
 "checksum futures 0.1.14 (registry+https://github.com/rust-lang/crates.io-index)" = "4b63a4792d4f8f686defe3b39b92127fea6344de5d38202b2ee5a11bbbf29d6a"
