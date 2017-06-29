@@ -414,3 +414,67 @@ fn fill_with_black(buf: &mut [f32]) {
         buf[i] = 0f32;
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn fill_with_black_test() {
+        let mut buf = [1f32, 2f32, 3f32, 4f32, 5f32];
+
+        fill_with_black(&mut buf[..]);
+
+        assert_eq!(buf, [0f32, 0f32, 0f32, 0f32, 0f32]);
+    }
+
+    #[test]
+    fn weighted_image_add_test() {
+        let mut buf = [1f32, 2f32, 3f32, 4f32, 5f32];
+        let image = [10, 20, 30, 40, 50];
+
+        weighted_image_add(&mut buf, &image, 0.5f32);
+
+        assert_eq!(buf, [6f32, 12f32, 18f32, 24f32, 30f32]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn weighted_image_add_len_mismatch_test() {
+        let mut buf = [1f32, 2f32, 3f32, 4f32, 5f32];
+        let image = [10, 20, 30, 40, 50, 60];
+
+        weighted_image_add(&mut buf, &image, 0.5f32);
+    }
+
+    #[test]
+    fn weighted_image_add_to_test() {
+        let buf = [1f32, 2f32, 3f32, 4f32, 5f32];
+        let image = [10, 20, 30, 40, 50];
+        let mut dst = [5, 4, 3, 2, 1];
+
+        weighted_image_add_to(&buf, &image, &mut dst, 0.5f32);
+
+        assert_eq!(dst, [6, 12, 18, 24, 30]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn weighted_image_add_to_len_mismatch_test() {
+        let buf = [1f32, 2f32, 3f32, 4f32, 5f32];
+        let image = [10, 20, 30, 40, 50, 60];
+        let mut dst = [5, 4, 3, 2, 1];
+
+        weighted_image_add_to(&buf, &image, &mut dst, 0.5f32);
+    }
+
+    #[test]
+    #[should_panic]
+    fn weighted_image_add_to_dst_len_mismatch_test() {
+        let buf = [1f32, 2f32, 3f32, 4f32, 5f32];
+        let image = [10, 20, 30, 40, 50];
+        let mut dst = [5, 4, 3, 2, 1, 0];
+
+        weighted_image_add_to(&buf, &image, &mut dst, 0.5f32);
+    }
+}
