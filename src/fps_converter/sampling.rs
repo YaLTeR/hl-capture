@@ -6,6 +6,7 @@ use capture;
 use hooks::hw::FrameCapture;
 use manual_free::ManualFree;
 
+/// Resampling FPS converter which averages input frames for smooth motion.
 pub struct SamplingConverter {
     /// Difference, in video frames, between how much time passed in-game and how much video we
     /// output.
@@ -14,10 +15,11 @@ pub struct SamplingConverter {
     /// The target time_base.
     time_base: f64,
 
-    /// Data with a destructor.
+    /// Data with a destructor, wrapped so `SamplingConverter` can be put in a static variable.
     private: ManualFree<SamplingConverterPrivate>,
 }
 
+/// Data with a destructor.
 struct SamplingConverterPrivate {
     /// Data used for OpenCL operations.
     ///
@@ -37,6 +39,7 @@ struct SamplingConverterPrivate {
     gl_read_buffer: Vec<u8>,
 }
 
+/// Data used at runtime by OpenCL sampling.
 struct OclRuntimeData {
     /// Buffer images.
     ocl_buffers: [ocl::Image<ocl::prm::Float>; 2],

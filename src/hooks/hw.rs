@@ -29,6 +29,7 @@ use sdl;
 static mut FUNCTIONS: Option<Functions> = None;
 static mut POINTERS: Option<Pointers> = None;
 
+/// Pointers to all used hw functions.
 struct Functions {
     RunListenServer: unsafe extern "C" fn(*mut c_void,
                       *mut c_char,
@@ -60,6 +61,7 @@ struct Functions {
     VideoMode_IsWindowed: unsafe extern "C" fn() -> c_int,
 }
 
+/// Pointers to all used hw variables.
 struct Pointers {
     cls: *mut client_static_t,
     host_frametime: *mut c_double,
@@ -72,6 +74,7 @@ struct Pointers {
 }
 
 thread_local! {
+    /// The audio buffer container, set and cleared in `S_PaintChannels()`.
     static AUDIO_BUFFER: RefCell<Option<capture::AudioBuffer>> = RefCell::new(None);
 }
 
@@ -80,6 +83,7 @@ pub enum SoundCaptureMode {
     Remaining,
 }
 
+/// Wrapper for the OpenCL image created from an OpenGL texture.
 pub struct OclGlTexture {
     image: ocl::Image<u8>,
 }
@@ -200,13 +204,13 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                          launcherFactory: *mut c_void,
                                          filesystemFactory: *mut c_void)
                                          -> c_int {
+    let engine = Engine::new();
+
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
-    if let Err(ref e) = refresh_pointers().chain_err(|| "error refreshing pointers") {
+    if let Err(ref e) = refresh_pointers(&engine).chain_err(|| "error refreshing pointers") {
         panic!("{}", e.display());
     }
-
-    let engine = Engine::new();
 
     // Initialize the encoding.
     encode::initialize();
@@ -234,7 +238,7 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     }
 
     // Since hw.so is getting unloaded, reset all pointers.
-    reset_pointers();
+    reset_pointers(&engine);
 
     rv
 }
@@ -325,7 +329,8 @@ pub unsafe extern "C" fn Key_Event(key: c_int, down: c_int) {
 pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     real!(Memory_Init)(buf, size);
 
-    register_cvars_and_commands();
+    let mut engine = Engine::new();
+    register_cvars_and_commands(&mut engine);
 
     gl::ReadPixels::load_with(|s| sdl::get_proc_address(s) as _);
     if !gl::ReadPixels::is_loaded() {
@@ -460,6 +465,7 @@ pub unsafe extern "C" fn Sys_VID_FlipScreen() {
 /// Returns whether the game is running in windowed mode.
 #[no_mangle]
 pub unsafe fn VideoMode_IsWindowed() -> c_int {
+    // Forcing FBO usage is temporarily disabled as it causes issues when resizing the window.
     // let engine = Engine::new();
     //
     // // Force FBO usage.
@@ -471,70 +477,67 @@ pub unsafe fn VideoMode_IsWindowed() -> c_int {
 }
 
 /// Obtains and stores all necessary function and variable addresses.
-///
-/// # Safety
-/// Unsafe because this function should only be called from the main game thread.
-unsafe fn refresh_pointers() -> Result<()> {
+fn refresh_pointers(_: &Engine) -> Result<()> {
     let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
         .chain_err(|| "couldn't load hw.so")?;
 
-    FUNCTIONS = Some(Functions {
-                         RunListenServer: find!(hw,
-                                                "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"),
-                         CL_Disconnect: find!(hw, "CL_Disconnect"),
-                         Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
-                         Cmd_Argc: find!(hw, "Cmd_Argc"),
-                         Cmd_Argv: find!(hw, "Cmd_Argv"),
-                         Con_Printf: find!(hw, "Con_Printf"),
-                         Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
-                         Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
-                         GL_SetMode: find!(hw, "GL_SetMode"),
-                         Host_FilterTime: find!(hw, "Host_FilterTime"),
-                         Key_Event: find!(hw, "Key_Event"),
-                         Memory_Init: find!(hw, "Memory_Init"),
-                         S_PaintChannels: find!(hw, "S_PaintChannels"),
-                         S_TransferStereo16: find!(hw, "S_TransferStereo16"),
-                         Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
-                         VideoMode_GetCurrentVideoMode: find!(hw, "VideoMode_GetCurrentVideoMode"),
-                         VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"),
-                     });
+    unsafe {
+        FUNCTIONS = Some(Functions {
+                             RunListenServer: find!(hw,
+                                                    "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"),
+                             CL_Disconnect: find!(hw, "CL_Disconnect"),
+                             Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
+                             Cmd_Argc: find!(hw, "Cmd_Argc"),
+                             Cmd_Argv: find!(hw, "Cmd_Argv"),
+                             Con_Printf: find!(hw, "Con_Printf"),
+                             Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
+                             Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
+                             GL_SetMode: find!(hw, "GL_SetMode"),
+                             Host_FilterTime: find!(hw, "Host_FilterTime"),
+                             Key_Event: find!(hw, "Key_Event"),
+                             Memory_Init: find!(hw, "Memory_Init"),
+                             S_PaintChannels: find!(hw, "S_PaintChannels"),
+                             S_TransferStereo16: find!(hw, "S_TransferStereo16"),
+                             Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
+                             VideoMode_GetCurrentVideoMode: find!(hw,
+                                                                  "VideoMode_GetCurrentVideoMode"),
+                             VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"),
+                         });
 
-    POINTERS = Some(Pointers {
-                        cls: find!(hw, "cls"),
-                        host_frametime: find!(hw, "host_frametime"),
-                        paintbuffer: find!(hw, "paintbuffer"),
-                        paintedtime: find!(hw, "paintedtime"),
-                        realtime: find!(hw, "realtime"),
-                        s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
-                        shm: find!(hw, "shm"),
-                        window_rect: find!(hw, "window_rect"),
-                    });
+        POINTERS = Some(Pointers {
+                            cls: find!(hw, "cls"),
+                            host_frametime: find!(hw, "host_frametime"),
+                            paintbuffer: find!(hw, "paintbuffer"),
+                            paintedtime: find!(hw, "paintedtime"),
+                            realtime: find!(hw, "realtime"),
+                            s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
+                            shm: find!(hw, "shm"),
+                            window_rect: find!(hw, "window_rect"),
+                        });
+    }
 
     Ok(())
 }
 
 /// Resets all pointers to their default values.
-///
-/// # Safety
-/// Unsafe because this function should only be called from the main game thread.
 #[inline]
-unsafe fn reset_pointers() {
-    FUNCTIONS = None;
-    POINTERS = None;
+fn reset_pointers(_: &Engine) {
+    unsafe {
+        FUNCTIONS = None;
+        POINTERS = None;
+    }
 }
 
 /// Registers console commands and variables.
-///
-/// # Safety
-/// Unsafe because this function should only be called from the main game thread.
-unsafe fn register_cvars_and_commands() {
+fn register_cvars_and_commands(engine: &mut Engine) {
     for cmd in &command::COMMANDS {
-        register_command(cmd.name(), cmd.callback());
+        unsafe {
+            register_command(cmd.name(), cmd.callback());
+        }
     }
 
-    let mut engine = Engine::new();
     for cvar in &cvar::CVARS {
-        if let Err(ref e) = cvar.register(&mut engine)
+        if let Err(ref e) = cvar.register(engine)
                                 .chain_err(|| "error registering a console variable")
         {
             panic!("{}", e.display());

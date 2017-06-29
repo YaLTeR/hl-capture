@@ -4,6 +4,7 @@ use super::*;
 use capture;
 use hooks::hw::FrameCapture;
 
+/// Simple FPS converter which drops and duplicates frames to get constant FPS output.
 pub struct SimpleConverter {
     /// Difference, in video frames, between how much time passed in-game and how much video we
     /// output.
