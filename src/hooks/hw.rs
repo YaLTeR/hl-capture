@@ -64,6 +64,7 @@ struct Functions {
 /// Pointers to all used hw variables.
 struct Pointers {
     cls: *mut client_static_t,
+    game: *mut *mut CGame,
     host_frametime: *mut c_double,
     paintbuffer: *mut portable_samplepair_t, // [1026]
     paintedtime: *mut c_int,
@@ -189,6 +190,12 @@ struct dma_t {
     speed: c_int,
     dmaspeed: c_int,
     buffer: *mut c_uchar,
+}
+
+#[repr(C)]
+struct CGame {
+    stuff: [u8; 0xC],
+    m_hSDLGLContext: c_uint,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -506,6 +513,7 @@ fn refresh_pointers(_: &Engine) -> Result<()> {
 
         POINTERS = Some(Pointers {
                             cls: find!(hw, "cls"),
+                            game: find!(hw, "game"),
                             host_frametime: find!(hw, "host_frametime"),
                             paintbuffer: find!(hw, "paintbuffer"),
                             paintedtime: find!(hw, "paintedtime"),
@@ -652,7 +660,7 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
             engine.data().pro_que = Some(None);
         } else {
             let context = ocl::Context::builder()
-                .gl_context(sdl::get_current_context())
+                .gl_context(get_opengl_context(engine))
                 .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
                 .build()
                 .chain_err(|| "error building ocl::Context");
@@ -895,6 +903,11 @@ fn read_pixels(_: &Engine, (w, h): (u32, u32), buf: &mut [u8]) {
                        gl::UNSIGNED_BYTE,
                        buf.as_mut_ptr() as _);
     }
+}
+
+/// Retrieves the current OpenGL context.
+fn get_opengl_context(_: &Engine) -> u32 {
+    unsafe { (**ptr!(game)).m_hSDLGLContext }
 }
 
 cvar!(cap_allow_tabbing_out_in_demos, "1");
