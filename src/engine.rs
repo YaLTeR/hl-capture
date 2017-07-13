@@ -71,7 +71,9 @@ impl Engine {
     /// Unsafe because this function should only be called from the main game thread.
     #[inline]
     pub unsafe fn new() -> Self {
-        Engine { _private: PhantomData }
+        Engine {
+            _private: PhantomData,
+        }
     }
 
     /// Returns a mutable reference to the main thread global variables.

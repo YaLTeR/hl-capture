@@ -268,11 +268,11 @@ impl Encoder {
         audio_input_frame.set_rate(HL_SAMPLE_RATE as u32);
 
         let resampler = software::resampler((audio_input_frame.format(),
-                                             audio_input_frame.channel_layout(),
-                                             audio_input_frame.rate()),
+                                            audio_input_frame.channel_layout(),
+                                            audio_input_frame.rate()),
                                             (audio_output_frame.format(),
-                                             audio_output_frame.channel_layout(),
-                                             audio_output_frame.rate()))
+                                            audio_output_frame.channel_layout(),
+                                            audio_output_frame.rate()))
                         .chain_err(|| "could not get the resampling context")?;
 
 
@@ -374,8 +374,8 @@ impl Encoder {
             let to_move = cmp::min(available_samples, available_space);
 
             for i in 0..to_move {
-                self.audio_input_frame.plane_mut(0)[self.audio_position + i] = samples[samples_pos +
-                                                                                           i];
+                self.audio_input_frame.plane_mut(0)[self.audio_position + i] =
+                    samples[samples_pos + i];
             }
 
             samples_pos += to_move;
@@ -554,8 +554,8 @@ pub fn initialize() {
             panic!("{}", e.display());
         }
 
-        *VIDEO_ENCODER.lock().unwrap() = encoder::find_by_name("libx264")
-            .and_then(|e| e.video().ok());
+        *VIDEO_ENCODER.lock().unwrap() =
+            encoder::find_by_name("libx264").and_then(|e| e.video().ok());
         *AUDIO_ENCODER.lock().unwrap() = encoder::find_by_name("aac").and_then(|e| e.audio().ok());
     });
 }

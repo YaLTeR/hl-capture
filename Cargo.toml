@@ -21,7 +21,7 @@ lazy_static = "0.2"
 libc = "0.2"
 gl = "0.6"
 glx = "0.1"
-ocl = { git = "https://github.com/YaLTeR/ocl.git", branch = "glx-sharing" }
+ocl = { git = "https://github.com/cogciprocate/ocl.git" }
 
 [dependencies.ffmpeg]
 git = "https://github.com/meh/rust-ffmpeg.git"

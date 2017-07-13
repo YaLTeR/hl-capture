@@ -32,11 +32,11 @@ static mut POINTERS: Option<Pointers> = None;
 /// Pointers to all used hw functions.
 struct Functions {
     RunListenServer: unsafe extern "C" fn(*mut c_void,
-                      *mut c_char,
-                      *mut c_char,
-                      *mut c_char,
-                      *mut c_void,
-                      *mut c_void) -> c_int,
+     *mut c_char,
+     *mut c_char,
+     *mut c_char,
+     *mut c_void,
+     *mut c_void) -> c_int,
 
     CL_Disconnect: unsafe extern "C" fn(),
     Cmd_AddCommand: unsafe extern "C" fn(*const c_char, *mut c_void),
@@ -46,11 +46,11 @@ struct Functions {
     Con_ToggleConsole_f: unsafe extern "C" fn(),
     Cvar_RegisterVariable: unsafe extern "C" fn(*mut cvar::cvar_t),
     GL_SetMode: unsafe extern "C" fn(c_int,
-                 *mut c_void,
-                 *mut c_void,
-                 c_int,
-                 *const c_char,
-                 *const c_char) -> c_int,
+     *mut c_void,
+     *mut c_void,
+     c_int,
+     *const c_char,
+     *const c_char) -> c_int,
     Host_FilterTime: unsafe extern "C" fn(c_float) -> c_int,
     Key_Event: unsafe extern "C" fn(key: c_int, down: c_int),
     Memory_Init: unsafe extern "C" fn(*mut c_void, c_int),
@@ -410,8 +410,8 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
 
             for i in 0..(end - paintedtime) as usize * 2 {
                 // Clamping as done in Snd_WriteLinearBlastStereo16().
-                let l16 = cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as
-                    i16;
+                let l16 =
+                    cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
                 let r16 = cmp::min(32767,
                                    cmp::max(-32768, (paintbuffer[i].right * volume) >> 8)) as
                     i16;
@@ -579,8 +579,8 @@ pub unsafe fn register_variable(cvar: &mut cvar::cvar_t) {
 /// Unsafe because this function should only be called from the main game thread.
 #[inline]
 pub unsafe fn con_print(string: &str) {
-    let cstring = CString::new(string.replace('%', "%%"))
-        .expect("string cannot contain null bytes");
+    let cstring =
+        CString::new(string.replace('%', "%%")).expect("string cannot contain null bytes");
     real!(Con_Printf)(cstring.as_ptr())
 }
 
@@ -655,31 +655,26 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
                               .replace('\0', "\\x00"));
         };
 
-        if ocl::core::default_platform().is_err() {
-            report_opencl_error("no OpenCL platforms were found".into());
-            engine.data().pro_que = Some(None);
-        } else {
-            let context = ocl::Context::builder()
-                .gl_context(get_opengl_context(engine))
-                .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
+        let context = ocl::Context::builder()
+            .gl_context(get_opengl_context(engine))
+            .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
+            .build()
+            .chain_err(|| "error building ocl::Context");
+
+        let pro_que = context.and_then(|ctx| {
+            ocl::ProQue::builder()
+                .context(ctx)
+                .prog_bldr(ocl::Program::builder()
+                               .src(include_str!("../../cl_src/color_conversion.cl"))
+                               .src(include_str!("../../cl_src/sampling.cl")))
                 .build()
-                .chain_err(|| "error building ocl::Context");
+                .chain_err(|| "error building ocl::ProQue")
+        })
+                             .map(|pro_que| Box::into_raw(Box::new(pro_que)))
+                             .map_err(report_opencl_error)
+                             .ok();
 
-            let pro_que = context.and_then(|ctx| {
-                ocl::ProQue::builder()
-                    .context(ctx)
-                    .prog_bldr(ocl::Program::builder()
-                                   .src(include_str!("../../cl_src/color_conversion.cl"))
-                                   .src(include_str!("../../cl_src/sampling.cl")))
-                    .build()
-                    .chain_err(|| "error building ocl::ProQue")
-            })
-                                 .map(|pro_que| Box::into_raw(Box::new(pro_que)))
-                                 .map_err(report_opencl_error)
-                                 .ok();
-
-            engine.data().pro_que = Some(pro_que);
-        }
+        engine.data().pro_que = Some(pro_que);
     }
 
     engine.data()

@@ -308,17 +308,13 @@ impl OclRuntimeData {
                 ocl_buffers: [
                     hw::build_ocl_image(engine,
                                         pro_que,
-                                        ocl::MemFlags::new()
-                                            .read_write()
-                                            .host_no_access(),
+                                        ocl::MemFlags::new().read_write().host_no_access(),
                                         ocl::enums::ImageChannelDataType::Float,
                                         (w, h).into())
                     .expect("building an OpenCL image"),
                     hw::build_ocl_image(engine,
                                         pro_que,
-                                        ocl::MemFlags::new()
-                                            .read_write()
-                                            .host_no_access(),
+                                        ocl::MemFlags::new().read_write().host_no_access(),
                                         ocl::enums::ImageChannelDataType::Float,
                                         (w, h).into())
                     .expect("building an OpenCL image"),
