@@ -33,6 +33,8 @@ mod manual_free;
 // mod profiler;
 mod sdl;
 
+#[link(name = "GL", kind = "dylib")] extern {}
+
 pub use self::hooks::hw::RunListenServer;
 pub use self::hooks::hw::CL_Disconnect;
 pub use self::hooks::hw::Con_ToggleConsole_f;

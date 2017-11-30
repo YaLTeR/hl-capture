@@ -160,7 +160,7 @@ impl VideoBuffer {
                 let plane_width = frame.plane_width(i) as usize;
                 let plane_height = frame.plane_height(i) as usize;
 
-                let mut plane_data = frame.data_mut(i);
+                let plane_data = frame.data_mut(i);
                 for y in 0..plane_height {
                     let plane_data_start = (plane_height - y - 1) * stride;
                     let length = plane_width * components_per_plane;
@@ -251,7 +251,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                                  drop_frames = true;
 
                                  event_sender.send(GameThreadEvent::Message(format!("{}",
-                                                                                    e.display())))
+                                                                                    e.display_chain())))
                                              .unwrap();
                              })
                     .ok();
@@ -275,7 +275,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 }
 
                 if let Err(e) = encode(&mut encoder, buffer, times, &mut frame) {
-                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
+                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display_chain())))
                                 .unwrap();
 
                     *CAPTURING.write().unwrap() = false;
@@ -297,7 +297,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 drop(buffer);
 
                 if let Err(e) = result {
-                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
+                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display_chain())))
                                 .unwrap();
 
                     *CAPTURING.write().unwrap() = false;
@@ -320,7 +320,7 @@ fn encode(encoder: &mut Option<Encoder>,
     // We're done with buf, now it can receive the next pack of pixels.
     drop(buf);
 
-    let mut encoder = encoder.as_mut().unwrap();
+    let encoder = encoder.as_mut().unwrap();
 
     ensure!((frame.width(), frame.height()) == (encoder.width(), encoder.height()),
             "resolution changes are not supported");
@@ -336,7 +336,7 @@ fn encode(encoder: &mut Option<Encoder>,
 fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>) {
     if let Some(mut encoder) = encoder {
         if let Err(e) = encoder.finish() {
-            event_sender.send(GameThreadEvent::Message(format!("{}", e.display())))
+            event_sender.send(GameThreadEvent::Message(format!("{}", e.display_chain())))
                         .unwrap();
         }
 
@@ -610,7 +610,7 @@ command!(cap_start, |mut engine| {
     let parameters = match parse_encoder_parameters(&mut engine) {
         Ok(p) => p,
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
+            engine.con_print(&format!("{}", e.display_chain()));
             return;
         }
     };
@@ -618,7 +618,7 @@ command!(cap_start, |mut engine| {
     engine.data().capture_parameters = match parse_capture_parameters(&mut engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
+            engine.con_print(&format!("{}", e.display_chain()));
             return;
         }
     };
@@ -660,7 +660,7 @@ command!(cap_test, |mut engine| {
     let parameters = match parse_encoder_parameters(&mut engine) {
         Ok(p) => p,
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
+            engine.con_print(&format!("{}", e.display_chain()));
             return;
         }
     };
@@ -668,13 +668,13 @@ command!(cap_test, |mut engine| {
     let _capture_parameters = match parse_capture_parameters(&mut engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display()));
+            engine.con_print(&format!("{}", e.display_chain()));
             return;
         }
     };
 
     if let Err(ref e) = test_encoder(&parameters) {
-        engine.con_print(&format!("{}", e.display()));
+        engine.con_print(&format!("{}", e.display_chain()));
     } else {
         engine.con_print("Capture was started and stopped successfully.\n");
     }

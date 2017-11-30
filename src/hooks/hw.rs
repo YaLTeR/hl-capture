@@ -195,7 +195,7 @@ struct dma_t {
 #[repr(C)]
 struct CGame {
     stuff: [u8; 0xC],
-    m_hSDLGLContext: c_uint,
+    m_hSDLGLContext: *mut c_void,
 }
 
 /// The "main" function of hw.so, called inside `CEngineAPI::Run()`.
@@ -216,7 +216,7 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
     if let Err(ref e) = refresh_pointers(&engine).chain_err(|| "error refreshing pointers") {
-        panic!("{}", e.display());
+        panic!("{}", e.display_chain());
     }
 
     // Initialize the encoding.
@@ -400,7 +400,7 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
     if engine.data().capture_sound {
         AUDIO_BUFFER.with(|b| {
             let mut buf = b.borrow_mut();
-            let mut buf = buf.as_mut().unwrap().data_mut();
+            let buf = buf.as_mut().unwrap().data_mut();
 
             let paintedtime = *ptr!(paintedtime);
             let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
@@ -548,7 +548,7 @@ fn register_cvars_and_commands(engine: &mut Engine) {
         if let Err(ref e) = cvar.register(engine)
                                 .chain_err(|| "error registering a console variable")
         {
-            panic!("{}", e.display());
+            panic!("{}", e.display_chain());
         }
     }
 }
@@ -651,7 +651,7 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
         let report_opencl_error = |ref e: Error| {
             engine.con_print(&format!("Could not initialize OpenCL, proceeding without it. \
                                        Error details:\n{}",
-                                      e.display())
+                                      e.display_chain())
                               .replace('\0', "\\x00"));
         };
 
@@ -696,7 +696,7 @@ fn build_ocl_buffer(engine: &Engine,
         .dims(length)
         .build()
         .chain_err(|| "could not build the OpenCL buffer")
-        .map_err(|ref e| { engine.con_print(&format!("{}", e.display())); })
+        .map_err(|ref e| { engine.con_print(&format!("{}", e.display_chain())); })
         .ok()
 }
 
@@ -716,7 +716,7 @@ pub fn build_ocl_image<T: ocl::OclPrm>(engine: &Engine,
         .queue(pro_que.queue().clone())
         .build()
         .chain_err(|| "could not build the OpenCL image")
-        .map_err(|ref e| { engine.con_print(&format!("{}", e.display())); })
+        .map_err(|ref e| { engine.con_print(&format!("{}", e.display_chain())); })
         .ok()
 }
 
@@ -843,7 +843,7 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
     };
 
     if yuv_buffers.is_some() {
-        let mut frame = buf.get_frame();
+        let frame = buf.get_frame();
 
         let &mut (ref Y_buf, ref U_buf, ref V_buf) = yuv_buffers.unwrap();
 
@@ -901,7 +901,7 @@ fn read_pixels(_: &Engine, (w, h): (u32, u32), buf: &mut [u8]) {
 }
 
 /// Retrieves the current OpenGL context.
-fn get_opengl_context(_: &Engine) -> u32 {
+fn get_opengl_context(_: &Engine) -> *mut c_void {
     unsafe { (**ptr!(game)).m_hSDLGLContext }
 }
 

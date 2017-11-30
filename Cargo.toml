@@ -15,13 +15,13 @@ panic = "abort"
 lto = true
 
 [dependencies]
-error-chain = "0.10"
+error-chain = "0.11"
 fine_grained = "0.1"
-lazy_static = "0.2"
+lazy_static = "1"
 libc = "0.2"
 gl = "0.6"
-glx = "0.1"
-ocl = { git = "https://github.com/cogciprocate/ocl.git" }
+glx = "0.2"
+ocl = "0.15"
 
 [dependencies.ffmpeg]
 git = "https://github.com/meh/rust-ffmpeg.git"
@@ -30,7 +30,7 @@ default-features = false
 features = ["codec", "format", "software-resampling", "software-scaling"]
 
 [dependencies.sdl2-sys]
-version = "0.30"
+version = "0.31"
 features = ["pkg-config"]
 
 [build-dependencies]
