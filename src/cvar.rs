@@ -7,13 +7,11 @@ use errors::*;
 
 include!(concat!(env!("OUT_DIR"), "/cvar_array.rs"));
 
-pub const EMPTY_CVAR_T: cvar_t = cvar_t {
-    name: 0 as *const _,
-    string: 0 as *mut _,
-    flags: 0,
-    value: 0f32,
-    next: 0 as *mut _,
-};
+pub const EMPTY_CVAR_T: cvar_t = cvar_t { name: 0 as *const _,
+                                          string: 0 as *mut _,
+                                          flags: 0,
+                                          value: 0f32,
+                                          next: 0 as *mut _, };
 
 /// The engine `CVar` type.
 #[repr(C)]
@@ -107,12 +105,10 @@ impl CVar {
 
     /// Tries parsing this variable's value to the desired type.
     pub fn parse<T>(&self, engine: &mut Engine) -> Result<T>
-    where
-        T: FromStr,
-        <T as FromStr>::Err: ::std::error::Error + Send + 'static,
+        where T: FromStr,
+              <T as FromStr>::Err: ::std::error::Error + Send + 'static
     {
-        let string = self.to_string(engine)
-                         .chain_err(|| "could not get this CVar's string value")?;
+        let string = self.to_string(engine).chain_err(|| "could not get this CVar's string value")?;
         string.parse()
               .chain_err(|| "could not convert the CVar string to the desired type")
     }

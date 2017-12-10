@@ -3,10 +3,10 @@
 
 use error_chain::ChainedError;
 use ffmpeg::format;
-use libc::*;
 use gl;
-use glx;
 use gl::types::*;
+use glx;
+use libc::*;
 use ocl;
 use std::cell::RefCell;
 use std::cmp;
@@ -45,12 +45,9 @@ struct Functions {
     Con_Printf: unsafe extern "C" fn(*const c_char),
     Con_ToggleConsole_f: unsafe extern "C" fn(),
     Cvar_RegisterVariable: unsafe extern "C" fn(*mut cvar::cvar_t),
-    GL_SetMode: unsafe extern "C" fn(c_int,
-     *mut c_void,
-     *mut c_void,
-     c_int,
-     *const c_char,
-     *const c_char) -> c_int,
+    GL_SetMode:
+        unsafe extern "C" fn(c_int, *mut c_void, *mut c_void, c_int, *const c_char, *const c_char)
+         -> c_int,
     Host_FilterTime: unsafe extern "C" fn(c_float) -> c_int,
     Key_Event: unsafe extern "C" fn(key: c_int, down: c_int),
     Memory_Init: unsafe extern "C" fn(*mut c_void, c_int),
@@ -134,8 +131,7 @@ impl Drop for OclGlTexture {
     fn drop(&mut self) {
         let mut event = ocl::Event::empty();
 
-        self.image
-            .cmd()
+        self.image.cmd()
             .gl_release()
             .enew(&mut event)
             .enq()
@@ -269,10 +265,9 @@ pub unsafe extern "C" fn CL_Disconnect() {
 pub unsafe extern "C" fn Con_ToggleConsole_f() {
     let mut engine = Engine::new();
 
-    if !engine.data().inside_key_event ||
-        cap_allow_tabbing_out_in_demos.parse(&mut engine)
-                                      .unwrap_or(0) == 0
-    {
+    if !engine.data().inside_key_event
+       || cap_allow_tabbing_out_in_demos.parse(&mut engine)
+                                        .unwrap_or(0) == 0 {
         real!(Con_ToggleConsole_f)();
     }
 }
@@ -413,8 +408,8 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
                 let l16 =
                     cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
                 let r16 = cmp::min(32767,
-                                   cmp::max(-32768, (paintbuffer[i].right * volume) >> 8)) as
-                    i16;
+                                   cmp::max(-32768, (paintbuffer[i].right * volume) >> 8))
+                          as i16;
 
                 buf.push((l16, r16));
             }
@@ -485,43 +480,39 @@ pub unsafe fn VideoMode_IsWindowed() -> c_int {
 
 /// Obtains and stores all necessary function and variable addresses.
 fn refresh_pointers(_: &Engine) -> Result<()> {
-    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD)
-        .chain_err(|| "couldn't load hw.so")?;
+    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).chain_err(|| "couldn't load hw.so")?;
 
     unsafe {
-        FUNCTIONS = Some(Functions {
-                             RunListenServer: find!(hw,
-                                                    "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"),
-                             CL_Disconnect: find!(hw, "CL_Disconnect"),
-                             Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
-                             Cmd_Argc: find!(hw, "Cmd_Argc"),
-                             Cmd_Argv: find!(hw, "Cmd_Argv"),
-                             Con_Printf: find!(hw, "Con_Printf"),
-                             Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
-                             Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
-                             GL_SetMode: find!(hw, "GL_SetMode"),
-                             Host_FilterTime: find!(hw, "Host_FilterTime"),
-                             Key_Event: find!(hw, "Key_Event"),
-                             Memory_Init: find!(hw, "Memory_Init"),
-                             S_PaintChannels: find!(hw, "S_PaintChannels"),
-                             S_TransferStereo16: find!(hw, "S_TransferStereo16"),
-                             Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
-                             VideoMode_GetCurrentVideoMode: find!(hw,
-                                                                  "VideoMode_GetCurrentVideoMode"),
-                             VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"),
-                         });
+        FUNCTIONS = Some(Functions { RunListenServer:
+                                         find!(hw,
+                                       "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"),
+                                     CL_Disconnect: find!(hw, "CL_Disconnect"),
+                                     Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
+                                     Cmd_Argc: find!(hw, "Cmd_Argc"),
+                                     Cmd_Argv: find!(hw, "Cmd_Argv"),
+                                     Con_Printf: find!(hw, "Con_Printf"),
+                                     Con_ToggleConsole_f: find!(hw, "Con_ToggleConsole_f"),
+                                     Cvar_RegisterVariable: find!(hw, "Cvar_RegisterVariable"),
+                                     GL_SetMode: find!(hw, "GL_SetMode"),
+                                     Host_FilterTime: find!(hw, "Host_FilterTime"),
+                                     Key_Event: find!(hw, "Key_Event"),
+                                     Memory_Init: find!(hw, "Memory_Init"),
+                                     S_PaintChannels: find!(hw, "S_PaintChannels"),
+                                     S_TransferStereo16: find!(hw, "S_TransferStereo16"),
+                                     Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
+                                     VideoMode_GetCurrentVideoMode:
+                                         find!(hw, "VideoMode_GetCurrentVideoMode"),
+                                     VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"), });
 
-        POINTERS = Some(Pointers {
-                            cls: find!(hw, "cls"),
-                            game: find!(hw, "game"),
-                            host_frametime: find!(hw, "host_frametime"),
-                            paintbuffer: find!(hw, "paintbuffer"),
-                            paintedtime: find!(hw, "paintedtime"),
-                            realtime: find!(hw, "realtime"),
-                            s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
-                            shm: find!(hw, "shm"),
-                            window_rect: find!(hw, "window_rect"),
-                        });
+        POINTERS = Some(Pointers { cls: find!(hw, "cls"),
+                                   game: find!(hw, "game"),
+                                   host_frametime: find!(hw, "host_frametime"),
+                                   paintbuffer: find!(hw, "paintbuffer"),
+                                   paintedtime: find!(hw, "paintedtime"),
+                                   realtime: find!(hw, "realtime"),
+                                   s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
+                                   shm: find!(hw, "shm"),
+                                   window_rect: find!(hw, "window_rect"), });
     }
 
     Ok(())
@@ -545,9 +536,8 @@ fn register_cvars_and_commands(engine: &mut Engine) {
     }
 
     for cvar in &cvar::CVARS {
-        if let Err(ref e) = cvar.register(engine)
-                                .chain_err(|| "error registering a console variable")
-        {
+        if let Err(ref e) =
+            cvar.register(engine).chain_err(|| "error registering a console variable") {
             panic!("{}", e.display_chain());
         }
     }
@@ -655,11 +645,10 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
                               .replace('\0', "\\x00"));
         };
 
-        let context = ocl::Context::builder()
-            .gl_context(get_opengl_context(engine))
-            .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
-            .build()
-            .chain_err(|| "error building ocl::Context");
+        let context = ocl::Context::builder().gl_context(get_opengl_context(engine))
+                                             .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
+                                             .build()
+                                             .chain_err(|| "error building ocl::Context");
 
         let pro_que = context.and_then(|ctx| {
             ocl::ProQue::builder()
@@ -690,14 +679,15 @@ fn build_ocl_buffer(engine: &Engine,
                     pro_que: &ocl::ProQue,
                     length: usize)
                     -> Option<ocl::Buffer<u8>> {
-    ocl::Buffer::<u8>::builder()
-        .queue(pro_que.queue().clone())
-        .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-        .dims(length)
-        .build()
-        .chain_err(|| "could not build the OpenCL buffer")
-        .map_err(|ref e| { engine.con_print(&format!("{}", e.display_chain())); })
-        .ok()
+    ocl::Buffer::<u8>::builder().queue(pro_que.queue().clone())
+                                .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                                .dims(length)
+                                .build()
+                                .chain_err(|| "could not build the OpenCL buffer")
+                                .map_err(|ref e| {
+                                             engine.con_print(&format!("{}", e.display_chain()));
+                                         })
+                                .ok()
 }
 
 /// Builds an ocl `Image` with the specified dimensions.
@@ -707,17 +697,18 @@ pub fn build_ocl_image<T: ocl::OclPrm>(engine: &Engine,
                                        data_type: ocl::enums::ImageChannelDataType,
                                        dims: ocl::SpatialDims)
                                        -> Option<ocl::Image<T>> {
-    ocl::Image::<T>::builder()
-        .channel_order(ocl::enums::ImageChannelOrder::Rgba)
-        .channel_data_type(data_type)
-        .image_type(ocl::enums::MemObjectType::Image2d)
-        .dims(dims)
-        .flags(mem_flags)
-        .queue(pro_que.queue().clone())
-        .build()
-        .chain_err(|| "could not build the OpenCL image")
-        .map_err(|ref e| { engine.con_print(&format!("{}", e.display_chain())); })
-        .ok()
+    ocl::Image::<T>::builder().channel_order(ocl::enums::ImageChannelOrder::Rgba)
+                              .channel_data_type(data_type)
+                              .image_type(ocl::enums::MemObjectType::Image2d)
+                              .dims(dims)
+                              .flags(mem_flags)
+                              .queue(pro_que.queue().clone())
+                              .build()
+                              .chain_err(|| "could not build the OpenCL image")
+                              .map_err(|ref e| {
+                                           engine.con_print(&format!("{}", e.display_chain()));
+                                       })
+                              .ok()
 }
 
 /// Builds ocl YUV buffers with the specified length.
@@ -748,11 +739,12 @@ fn get_yuv_buffers<'a>(engine: &Engine,
 
     // Verify the buffer sizes.
     match engine.data()
-                  .ocl_yuv_buffers
-                  .as_mut()
-                  .unwrap()
-                  .as_mut()
-                  .map(|ptr| unsafe { ptr.as_mut() }.unwrap()) {
+                .ocl_yuv_buffers
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .map(|ptr| unsafe { ptr.as_mut() }.unwrap())
+    {
         Some(&mut (ref Y_buf, ref U_buf, ref V_buf)) => {
             // Check if the requested buffer size is different.
             // In most cases if one of the buffer sizes changes, the other do as well.

@@ -28,8 +28,7 @@ impl Handle {
             dlerror();
         }
 
-        let symbol = CString::new(symbol)
-            .chain_err(|| "unable to convert symbol to a CString")?;
+        let symbol = CString::new(symbol).chain_err(|| "unable to convert symbol to a CString")?;
         let ptr = unsafe { dlsym(self.ptr, symbol.as_ptr()) };
 
         let error = unsafe { dlerror() };
@@ -44,8 +43,7 @@ impl Handle {
 
 /// Opens a dynamic library and returns the resulting handle.
 pub fn open(filename: &str, flags: c_int) -> Result<Handle> {
-    let filename = CString::new(filename)
-        .chain_err(|| "unable to convert filename to a CString")?;
+    let filename = CString::new(filename).chain_err(|| "unable to convert filename to a CString")?;
 
     let ptr = unsafe { dlopen(filename.as_ptr(), flags) };
 

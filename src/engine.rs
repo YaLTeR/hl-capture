@@ -1,25 +1,23 @@
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use errors::*;
 use command;
-use cvar::{CVar, cvar_t};
+use cvar::{cvar_t, CVar};
+use errors::*;
 use hooks::hw;
 
-static mut MAIN_THREAD_DATA: MainThreadDataContainer = MainThreadDataContainer {
-    data: MainThreadData {
-        capture_parameters: None,
-        capture_sound: false,
-        sound_remainder: 0f64,
-        sound_capture_mode: ::hooks::hw::SoundCaptureMode::Normal,
-        inside_key_event: false,
-        inside_gl_setmode: false,
-        fps_converter: None,
-        encoder_pixel_format: None,
-        pro_que: None,
-        ocl_yuv_buffers: None,
-    },
-};
+static mut MAIN_THREAD_DATA: MainThreadDataContainer =
+    MainThreadDataContainer { data: MainThreadData { capture_parameters: None,
+                                                     capture_sound: false,
+                                                     sound_remainder: 0f64,
+                                                     sound_capture_mode:
+                                                         ::hooks::hw::SoundCaptureMode::Normal,
+                                                     inside_key_event: false,
+                                                     inside_gl_setmode: false,
+                                                     fps_converter: None,
+                                                     encoder_pixel_format: None,
+                                                     pro_que: None,
+                                                     ocl_yuv_buffers: None, }, };
 
 /// Global variables accessible from the main game thread.
 pub struct MainThreadData {
@@ -71,9 +69,7 @@ impl Engine {
     /// Unsafe because this function should only be called from the main game thread.
     #[inline]
     pub unsafe fn new() -> Self {
-        Engine {
-            _private: PhantomData,
-        }
+        Engine { _private: PhantomData, }
     }
 
     /// Returns a mutable reference to the main thread global variables.
@@ -127,10 +123,8 @@ impl Engine {
     /// that no engine functions are called while the engine CVar reference is valid.
     #[inline]
     pub fn get_engine_cvar(&mut self, cvar: &CVar) -> EngineCVarGuard {
-        EngineCVarGuard {
-            engine_cvar: unsafe { cvar.get_engine_cvar() },
-            _borrow_guard: self,
-        }
+        EngineCVarGuard { engine_cvar: unsafe { cvar.get_engine_cvar() },
+                          _borrow_guard: self, }
     }
 }
 

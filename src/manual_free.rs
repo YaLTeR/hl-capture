@@ -8,10 +8,8 @@ pub struct ManualFree<T> {
 impl<T> ManualFree<T> {
     #[inline]
     pub fn new(x: T) -> Self {
-        Self {
-            ptr: Box::into_raw(Box::new(x)),
-            freed: false,
-        }
+        Self { ptr: Box::into_raw(Box::new(x)),
+               freed: false, }
     }
 
     #[inline]

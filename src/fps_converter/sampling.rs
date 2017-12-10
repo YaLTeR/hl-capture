@@ -56,11 +56,9 @@ impl SamplingConverter {
     pub fn new(engine: &Engine, time_base: f64, video_resolution: (u32, u32)) -> Self {
         assert!(time_base > 0f64);
 
-        Self {
-            remainder: 0f64,
-            time_base,
-            private: ManualFree::new(SamplingConverterPrivate::new(engine, video_resolution)),
-        }
+        Self { remainder: 0f64,
+               time_base,
+               private: ManualFree::new(SamplingConverterPrivate::new(engine, video_resolution)), }
     }
 
     /// This should be called before an engine restart.
@@ -77,8 +75,7 @@ impl SamplingConverter {
 
 impl FPSConverter for SamplingConverter {
     fn time_passed<F>(&mut self, engine: &Engine, frametime: f64, capture: F)
-    where
-        F: FnOnce(&Engine) -> FrameCapture,
+        where F: FnOnce(&Engine) -> FrameCapture
     {
         assert!(frametime >= 0.0f64);
 
@@ -98,8 +95,7 @@ impl FPSConverter for SamplingConverter {
                 FrameCapture::OpenGL(read_pixels) => {
                     let (w, h) = self.private.video_resolution;
                     self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
-                    self.private
-                        .gl_sampling_buffer
+                    self.private.gl_sampling_buffer
                         .resize((w * h * 3) as usize, 0f32);
 
                     read_pixels(engine, (w, h), &mut self.private.gl_read_buffer);
@@ -129,8 +125,7 @@ impl FPSConverter for SamplingConverter {
                 FrameCapture::OpenGL(read_pixels) => {
                     let (w, h) = self.private.video_resolution;
                     self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
-                    self.private
-                        .gl_sampling_buffer
+                    self.private.gl_sampling_buffer
                         .resize((w * h * 3) as usize, 0f32);
 
                     read_pixels(engine, (w, h), &mut self.private.gl_read_buffer);
@@ -152,8 +147,7 @@ impl FPSConverter for SamplingConverter {
                     if additional_frames > 0 {
                         let mut buf = capture::get_buffer(engine, (w, h));
                         buf.set_format(format::Pixel::RGB24);
-                        buf.as_mut_slice()
-                           .copy_from_slice(&self.private.gl_read_buffer);
+                        buf.as_mut_slice().copy_from_slice(&self.private.gl_read_buffer);
                         capture::capture(engine, buf, additional_frames);
 
                         self.remainder -= additional_frames as f64;
@@ -164,9 +158,9 @@ impl FPSConverter for SamplingConverter {
                         let private: &mut SamplingConverterPrivate = &mut self.private;
                         weighted_image_add(&mut private.gl_sampling_buffer,
                                            &private.gl_read_buffer,
-                                           ((self.remainder - (1f64 - exposure)) *
-                                                (1f64 / exposure)) as
-                                               f32);
+                                           ((self.remainder - (1f64 - exposure))
+                                            * (1f64 / exposure))
+                                           as f32);
                     }
                 }
 
@@ -207,9 +201,9 @@ impl FPSConverter for SamplingConverter {
                                                ocl_gl_texture.as_ref(),
                                                ocl_data.src_buffer(),
                                                ocl_data.dst_buffer(),
-                                               ((self.remainder - (1f64 - exposure)) *
-                                                    (1f64 / exposure)) as
-                                                   f32);
+                                               ((self.remainder - (1f64 - exposure))
+                                                * (1f64 / exposure))
+                                               as f32);
                         ocl_data.switch_buffer_index();
                     }
                 }
@@ -221,13 +215,11 @@ impl FPSConverter for SamplingConverter {
 impl SamplingConverterPrivate {
     #[inline]
     fn new(engine: &Engine, video_resolution: (u32, u32)) -> Self {
-        Self {
-            ocl_runtime_data: Some(OclRuntimeData::new(engine, video_resolution)),
-            ocl_backup_buffer: None,
-            video_resolution,
-            gl_sampling_buffer: Vec::new(),
-            gl_read_buffer: Vec::new(),
-        }
+        Self { ocl_runtime_data: Some(OclRuntimeData::new(engine, video_resolution)),
+               ocl_backup_buffer: None,
+               video_resolution,
+               gl_sampling_buffer: Vec::new(),
+               gl_read_buffer: Vec::new(), }
     }
 
     #[inline]

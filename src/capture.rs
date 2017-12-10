@@ -1,9 +1,9 @@
 use error_chain::ChainedError;
-use ffmpeg::{Rational, format};
+use ffmpeg::{format, Rational};
 use ffmpeg::frame::Video as VideoFrame;
 use std::ops::Deref;
-use std::sync::{Mutex, ONCE_INIT, Once, RwLock};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::{Mutex, Once, RwLock, ONCE_INIT};
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::thread;
 
 use encode::{Encoder, EncoderParameters};
@@ -77,25 +77,20 @@ struct SendOnDrop<'a, T: 'a> {
 impl VideoBuffer {
     #[inline]
     fn new() -> Self {
-        Self {
-            data: Vec::new(),
-            width: 0,
-            height: 0,
-            format: format::Pixel::RGB24,
-            components: format::Pixel::RGB24.descriptor().unwrap().nb_components(),
-            frame: VideoFrame::empty(),
-            data_is_in_frame: false,
-        }
+        Self { data: Vec::new(),
+               width: 0,
+               height: 0,
+               format: format::Pixel::RGB24,
+               components: format::Pixel::RGB24.descriptor().unwrap().nb_components(),
+               frame: VideoFrame::empty(),
+               data_is_in_frame: false, }
     }
 
     #[inline]
     pub fn set_resolution(&mut self, width: u32, height: u32) {
         if self.width != width || self.height != height {
             println!("Changing resolution from {}×{} to {}×{}.",
-                     self.width,
-                     self.height,
-                     width,
-                     height);
+                     self.width, self.height, width, height);
 
             self.width = width;
             self.height = height;
@@ -116,8 +111,7 @@ impl VideoBuffer {
 
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         self.data_is_in_frame = false;
-        self.data
-            .resize((self.width * self.height * self.components as u32) as usize,
+        self.data.resize((self.width * self.height * self.components as u32) as usize,
                     0);
 
         self.data.as_mut_slice()
@@ -126,9 +120,8 @@ impl VideoBuffer {
     pub fn get_frame(&mut self) -> &mut VideoFrame {
         self.data_is_in_frame = true;
 
-        if self.width != self.frame.width() || self.height != self.frame.height() ||
-            self.format != self.frame.format()
-        {
+        if self.width != self.frame.width() || self.height != self.frame.height()
+           || self.format != self.frame.format() {
             self.frame = VideoFrame::new(self.format, self.width, self.height);
         }
 
@@ -137,9 +130,8 @@ impl VideoBuffer {
 
     pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
         // Make sure the frame is of correct size.
-        if self.width != frame.width() || self.height != frame.height() ||
-            self.format != frame.format()
-        {
+        if self.width != frame.width() || self.height != frame.height()
+           || self.format != frame.format() {
             *frame = VideoFrame::new(self.format, self.width, self.height);
         }
 
@@ -195,10 +187,8 @@ impl AudioBuffer {
 impl<'a, T> SendOnDrop<'a, T> {
     #[inline]
     fn new(buffer: T, channel: &'a Sender<T>) -> Self {
-        Self {
-            buffer: Some(buffer),
-            channel,
-        }
+        Self { buffer: Some(buffer),
+               channel, }
     }
 }
 
@@ -241,18 +231,18 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
         match event_receiver.recv().unwrap() {
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
+
                 encoder = Encoder::start(&params)
-                    .chain_err(|| {
-                                   "could not start the encoder; check your terminal (Half-Life's \
-                                    standard output) for ffmpeg messages"
-                               })
+                    .chain_err(|| "could not start the encoder; check your terminal (Half-Life's \
+                                   standard output) for ffmpeg messages")
                     .map_err(|ref e| {
                                  *CAPTURING.write().unwrap() = false;
                                  drop_frames = true;
 
-                                 event_sender.send(GameThreadEvent::Message(format!("{}",
-                                                                                    e.display_chain())))
-                                             .unwrap();
+                                 event_sender
+                                     .send(GameThreadEvent::Message(
+                                               format!("{}", e.display_chain())))
+                                     .unwrap();
                              })
                     .ok();
 
@@ -347,18 +337,18 @@ fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>
 pub fn initialize(_: &Engine) {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
-        let (tx, rx) = channel::<VideoBuffer>();
-        let (tx2, rx2) = channel::<AudioBuffer>();
-        let (tx3, rx3) = channel::<GameThreadEvent>();
-        let (tx4, rx4) = channel::<CaptureThreadEvent>();
+                       let (tx, rx) = channel::<VideoBuffer>();
+                       let (tx2, rx2) = channel::<AudioBuffer>();
+                       let (tx3, rx3) = channel::<GameThreadEvent>();
+                       let (tx4, rx4) = channel::<CaptureThreadEvent>();
 
-        *VIDEO_BUF_RECEIVER.lock().unwrap() = Some(rx);
-        *AUDIO_BUF_RECEIVER.lock().unwrap() = Some(rx2);
-        *GAME_THREAD_RECEIVER.lock().unwrap() = Some(rx3);
-        *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx4);
+                       *VIDEO_BUF_RECEIVER.lock().unwrap() = Some(rx);
+                       *AUDIO_BUF_RECEIVER.lock().unwrap() = Some(rx2);
+                       *GAME_THREAD_RECEIVER.lock().unwrap() = Some(rx3);
+                       *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx4);
 
-        thread::spawn(move || capture_thread(&tx, &tx2, &tx3, &rx4));
-    });
+                       thread::spawn(move || capture_thread(&tx, &tx2, &tx3, &rx4));
+                   });
 }
 
 #[inline]
@@ -388,10 +378,11 @@ pub fn get_audio_buffer(_: &Engine) -> AudioBuffer {
 #[inline]
 pub fn get_event(_: &Engine) -> Option<GameThreadEvent> {
     match GAME_THREAD_RECEIVER.lock()
-                                .unwrap()
-                                .as_ref()
-                                .unwrap()
-                                .try_recv() {
+                              .unwrap()
+                              .as_ref()
+                              .unwrap()
+                              .try_recv()
+    {
         Ok(event) => Some(event),
         Err(TryRecvError::Empty) => None,
         Err(TryRecvError::Disconnected) => unreachable!(),
@@ -590,11 +581,10 @@ fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
 
 /// Starts and stops the encoder.
 fn test_encoder(parameters: &EncoderParameters) -> Result<()> {
-    let mut encoder = Encoder::start(parameters)
-        .chain_err(|| {
-                       "could not start the encoder; check your terminal (Half-Life's \
-                        standard output) for ffmpeg messages"
-                   })?;
+    let mut encoder = Encoder::start(parameters).chain_err(|| {
+        "could not start the encoder; check your terminal (Half-Life's \
+         standard output) for ffmpeg messages"
+    })?;
     encoder.finish()
            .chain_err(|| "could not finish the encoder")?;
     Ok(())
@@ -628,8 +618,7 @@ command!(cap_start, |mut engine| {
                                            .as_ref()
                                            .unwrap()
                                            .sampling_time_base
-                                           .is_some()
-    {
+                                           .is_some() {
         Some(FPSConverters::Sampling(SamplingConverter::new(&engine,
                                                             parameters.time_base.into(),
                                                             parameters.video_resolution)))

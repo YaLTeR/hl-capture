@@ -19,17 +19,14 @@ impl SimpleConverter {
     pub fn new(time_base: f64) -> Self {
         assert!(time_base > 0f64);
 
-        Self {
-            remainder: 0f64,
-            time_base,
-        }
+        Self { remainder: 0f64,
+               time_base, }
     }
 }
 
 impl FPSConverter for SimpleConverter {
     fn time_passed<F>(&mut self, engine: &Engine, frametime: f64, capture: F)
-    where
-        F: FnOnce(&Engine) -> FrameCapture,
+        where F: FnOnce(&Engine) -> FrameCapture
     {
         assert!(frametime >= 0.0f64);
 
