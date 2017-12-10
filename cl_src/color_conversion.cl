@@ -69,7 +69,13 @@ __kernel void rgb_to_yuv420_601_limited(read_only image2d_t src_image,
 		if (coords.x + 1 < w && coords.y + 1 < h) {
 			bottom_right = read_imagef(src_image, coords + (int2)(1, 1));
 		} else {
-			bottom_right = pixel;
+			if (coords.x + 1 < w) {
+				bottom_right = top_right;
+			} else if (coords.y + 1 < h) {
+				bottom_right = bottom_left;
+			} else {
+				bottom_right = pixel;
+			}
 		}
 
 		pixel = (pixel + top_right + bottom_left + bottom_right) / (float4)(4.0, 4.0, 4.0, 4.0);
