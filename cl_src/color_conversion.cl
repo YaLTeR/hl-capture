@@ -78,7 +78,8 @@ __kernel void rgb_to_yuv420_601_limited(read_only image2d_t src_image,
 			}
 		}
 
-		pixel = (pixel + top_right + bottom_left + bottom_right) / (float4)(4.0, 4.0, 4.0, 4.0);
+		pixel = (pixel + top_right + bottom_left + bottom_right)
+			/ (float4)(4.0, 4.0, 4.0, 4.0);
 
 		coords.x >>= 1;
 		coords.y >>= 1;
