@@ -31,7 +31,7 @@ features = ["codec", "format", "software-resampling", "software-scaling"]
 
 [dependencies.sdl2-sys]
 version = "0.31"
-features = ["pkg-config"]
+features = ["use-pkgconfig"]
 
 [build-dependencies]
 syn = { version = "0.11", features = ["full", "visit"] }
