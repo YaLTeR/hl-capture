@@ -10,6 +10,7 @@ matrix:
 addons:
   apt:
     packages:
+    - libgl1-mesa-dev:i386
     - gcc-multilib
     - yasm
     - zlib1g-dev:i386
