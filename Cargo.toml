@@ -19,7 +19,7 @@ error-chain = "0.11"
 fine_grained = "0.1"
 lazy_static = "1"
 libc = "0.2"
-gl = "0.6"
+gl = "0.7"
 glx = "0.2"
 ocl = "0.15"
 
@@ -31,7 +31,7 @@ features = ["codec", "format", "software-resampling", "software-scaling"]
 
 [dependencies.sdl2-sys]
 version = "0.31"
-features = ["pkg-config"]
+features = ["use-pkgconfig"]
 
 [build-dependencies]
 syn = { version = "0.11", features = ["full", "visit"] }
