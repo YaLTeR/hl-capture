@@ -126,7 +126,8 @@ impl Encoder {
             }
 
             if encoder.format() == format::Pixel::YUV420P
-               || encoder.format() == format::Pixel::YUV444P {
+               || encoder.format() == format::Pixel::YUV444P
+            {
                 // Write the color space and range into the output file so everything knows how to
                 // display it.
                 encoder.set_colorspace(color::Space::BT470BG);
@@ -214,15 +215,16 @@ impl Encoder {
             let encoder_settings = parameters.audio_encoder_settings
                                              .split_whitespace()
                                              .filter_map(|s| {
-                                                 let mut split = s.splitn(2, '=');
+                                                             let mut split = s.splitn(2, '=');
 
-                                                 if let (Some(key), Some(value)) =
-                    (split.next(), split.next()) {
-                                                     return Some((key, value));
-                                                 }
+                                                             if let (Some(key), Some(value)) =
+                                                                 (split.next(), split.next())
+                                                             {
+                                                                 return Some((key, value));
+                                                             }
 
-                                                 None
-                                             })
+                                                             None
+                                                         })
                                              .collect();
 
             let encoder = encoder.open_as_with(audio_codec, encoder_settings)
@@ -237,15 +239,16 @@ impl Encoder {
         let muxer_settings = parameters.muxer_settings
                                        .split_whitespace()
                                        .filter_map(|s| {
-                                           let mut split = s.splitn(2, '=');
+                                                       let mut split = s.splitn(2, '=');
 
-                                           if let (Some(key), Some(value)) =
-                (split.next(), split.next()) {
-                                               return Some((key, value));
-                                           }
+                                                       if let (Some(key), Some(value)) =
+                                                           (split.next(), split.next())
+                                                       {
+                                                           return Some((key, value));
+                                                       }
 
-                                           None
-                                       })
+                                                       None
+                                                   })
                                        .collect();
 
         context.write_header_with(muxer_settings)
@@ -308,7 +311,8 @@ impl Encoder {
             self.video_pts += 1;
 
             if self.video_encoder.encode(frame, &mut self.packet)
-                   .chain_err(|| "could not encode the video frame")? {
+                   .chain_err(|| "could not encode the video frame")?
+            {
                 self.packet.rescale_ts(self.time_base, self.video_stream_time_base);
                 self.packet.set_stream(self.video_stream_index);
 
@@ -325,7 +329,8 @@ impl Encoder {
         self.audio_pts += self.audio_output_frame.samples() as i64;
 
         if self.audio_encoder.encode(&self.audio_output_frame, &mut self.packet)
-               .chain_err(|| "could not encode the audio frame")? {
+               .chain_err(|| "could not encode the audio frame")?
+        {
             self.packet.rescale_ts((1, self.audio_output_frame.rate() as i32),
                             self.audio_stream_time_base);
             self.packet.set_stream(self.audio_stream_index);
@@ -391,7 +396,8 @@ impl Encoder {
 
     fn flush(&mut self) -> Result<()> {
         while self.video_encoder.flush(&mut self.packet)
-                  .chain_err(|| "could not get the packet")? {
+                  .chain_err(|| "could not get the packet")?
+        {
             self.packet.rescale_ts(self.time_base, self.video_stream_time_base);
             self.packet.set_stream(self.video_stream_index);
 
@@ -420,7 +426,8 @@ impl Encoder {
         }
 
         while self.audio_encoder.flush(&mut self.packet)
-                  .chain_err(|| "could not get the packet")? {
+                  .chain_err(|| "could not get the packet")?
+        {
             self.packet.rescale_ts((1, self.audio_output_frame.rate() as i32),
                             self.audio_stream_time_base);
             self.packet.set_stream(self.audio_stream_index);
@@ -524,14 +531,16 @@ pub fn initialize() {
     static INIT: Once = ONCE_INIT;
 
     INIT.call_once(|| {
-        if let Err(ref e) = ffmpeg::init().chain_err(|| "error initializing ffmpeg") {
-            panic!("{}", e.display_chain());
-        }
+                       if let Err(ref e) = ffmpeg::init().chain_err(|| "error initializing ffmpeg")
+                       {
+                           panic!("{}", e.display_chain());
+                       }
 
-        *VIDEO_ENCODER.lock().unwrap() =
-            encoder::find_by_name("libx264").and_then(|e| e.video().ok());
-        *AUDIO_ENCODER.lock().unwrap() = encoder::find_by_name("aac").and_then(|e| e.audio().ok());
-    });
+                       *VIDEO_ENCODER.lock().unwrap() =
+                           encoder::find_by_name("libx264").and_then(|e| e.video().ok());
+                       *AUDIO_ENCODER.lock().unwrap() =
+                           encoder::find_by_name("aac").and_then(|e| e.audio().ok());
+                   });
 }
 
 /// Outputs information about the selected video encoder.

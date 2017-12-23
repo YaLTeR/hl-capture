@@ -13,11 +13,11 @@ fn main() {
     // This code won't work properly with lib.rs or mod.rs.
     let mut data = Data::new();
 
-    for entry in walkdir::WalkDir::new("src")
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| !e.file_type().is_dir())
-        .filter(|e| e.path().extension() == Some(OsStr::new("rs")))
+    for entry in
+        walkdir::WalkDir::new("src").into_iter()
+                                    .filter_map(|e| e.ok())
+                                    .filter(|e| !e.file_type().is_dir())
+                                    .filter(|e| e.path().extension() == Some(OsStr::new("rs")))
     {
         let mut path = String::new();
 
@@ -68,28 +68,23 @@ struct Data {
 
 impl Data {
     fn new() -> Self {
-        Self {
-            commands: Vec::new(),
-            cvars: Vec::new(),
-        }
+        Self { commands: Vec::new(),
+               cvars: Vec::new(), }
     }
 }
 
 fn get_data(path: &Path) -> Data {
     let mut source = String::new();
-    File::open(path)
-        .unwrap()
-        .read_to_string(&mut source)
-        .unwrap();
+    File::open(path).unwrap()
+                    .read_to_string(&mut source)
+                    .unwrap();
 
     if let Ok(_crate) = syn::parse_crate(&source) {
         let mut visitor = MyVisitor::new();
         visitor.visit_crate(&_crate);
 
-        Data {
-            commands: visitor.commands,
-            cvars: visitor.cvars,
-        }
+        Data { commands: visitor.commands,
+               cvars: visitor.cvars, }
     } else {
         Data::new()
     }
@@ -138,10 +133,8 @@ struct MyVisitor {
 
 impl MyVisitor {
     fn new() -> Self {
-        Self {
-            commands: Vec::new(),
-            cvars: Vec::new(),
-        }
+        Self { commands: Vec::new(),
+               cvars: Vec::new(), }
     }
 }
 

@@ -121,7 +121,8 @@ impl VideoBuffer {
         self.data_is_in_frame = true;
 
         if self.width != self.frame.width() || self.height != self.frame.height()
-           || self.format != self.frame.format() {
+           || self.format != self.frame.format()
+        {
             self.frame = VideoFrame::new(self.format, self.width, self.height);
         }
 
@@ -131,7 +132,8 @@ impl VideoBuffer {
     pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
         // Make sure the frame is of correct size.
         if self.width != frame.width() || self.height != frame.height()
-           || self.format != frame.format() {
+           || self.format != frame.format()
+        {
             *frame = VideoFrame::new(self.format, self.width, self.height);
         }
 
@@ -618,7 +620,8 @@ command!(cap_start, |mut engine| {
                                            .as_ref()
                                            .unwrap()
                                            .sampling_time_base
-                                           .is_some() {
+                                           .is_some()
+    {
         Some(FPSConverters::Sampling(SamplingConverter::new(&engine,
                                                             parameters.time_base.into(),
                                                             parameters.video_resolution)))

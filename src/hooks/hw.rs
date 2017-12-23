@@ -267,7 +267,8 @@ pub unsafe extern "C" fn Con_ToggleConsole_f() {
 
     if !engine.data().inside_key_event
        || cap_allow_tabbing_out_in_demos.parse(&mut engine)
-                                        .unwrap_or(0) == 0 {
+                                        .unwrap_or(0) == 0
+    {
         real!(Con_ToggleConsole_f)();
     }
 }
@@ -394,26 +395,30 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
     let engine = Engine::new();
     if engine.data().capture_sound {
         AUDIO_BUFFER.with(|b| {
-            let mut buf = b.borrow_mut();
-            let buf = buf.as_mut().unwrap().data_mut();
+                              let mut buf = b.borrow_mut();
+                              let buf = buf.as_mut().unwrap().data_mut();
 
-            let paintedtime = *ptr!(paintedtime);
-            let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
+                              let paintedtime = *ptr!(paintedtime);
+                              let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
 
-            let engine = Engine::new();
-            let volume = (capture::get_capture_parameters(&engine).volume * 256f32) as i32;
+                              let engine = Engine::new();
+                              let volume =
+                                  (capture::get_capture_parameters(&engine).volume * 256f32) as i32;
 
-            for i in 0..(end - paintedtime) as usize * 2 {
-                // Clamping as done in Snd_WriteLinearBlastStereo16().
-                let l16 =
-                    cmp::min(32767, cmp::max(-32768, (paintbuffer[i].left * volume) >> 8)) as i16;
-                let r16 = cmp::min(32767,
-                                   cmp::max(-32768, (paintbuffer[i].right * volume) >> 8))
-                          as i16;
+                              for i in 0..(end - paintedtime) as usize * 2 {
+                                  // Clamping as done in Snd_WriteLinearBlastStereo16().
+                                  let l16 = cmp::min(32767,
+                                                     cmp::max(-32768,
+                                                              (paintbuffer[i].left * volume) >> 8))
+                                            as i16;
+                                  let r16 = cmp::min(32767,
+                                                     cmp::max(-32768,
+                                                              (paintbuffer[i].right * volume) >> 8))
+                                            as i16;
 
-                buf.push((l16, r16));
-            }
-        });
+                                  buf.push((l16, r16));
+                              }
+                          });
     }
 
     real!(S_TransferStereo16)(end);
@@ -537,7 +542,8 @@ fn register_cvars_and_commands(engine: &mut Engine) {
 
     for cvar in &cvar::CVARS {
         if let Err(ref e) =
-            cvar.register(engine).chain_err(|| "error registering a console variable") {
+            cvar.register(engine).chain_err(|| "error registering a console variable")
+        {
             panic!("{}", e.display_chain());
         }
     }
