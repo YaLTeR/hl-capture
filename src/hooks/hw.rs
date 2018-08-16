@@ -106,13 +106,13 @@ impl OclGlTexture {
                                                         0,
                                                         None);
 
-        let image = ocl::Image::<u8>::from_gl_texture(queue,
-                                                      ocl::flags::MEM_READ_ONLY,
-                                                      descr,
-                                                      ocl::core::GlTextureTarget::GlTexture2d,
-                                                      0,
-                                                      texture)
-                    .expect("ocl::Image::from_gl_texture()");
+        let image =
+            ocl::Image::<u8>::from_gl_texture(queue,
+                                              ocl::flags::MEM_READ_ONLY,
+                                              descr,
+                                              ocl::core::GlTextureTarget::GlTexture2d,
+                                              0,
+                                              texture).expect("ocl::Image::from_gl_texture()");
 
         image.cmd().gl_acquire().enq().expect("gl_acquire()");
 
@@ -131,7 +131,8 @@ impl Drop for OclGlTexture {
     fn drop(&mut self) {
         let mut event = ocl::Event::empty();
 
-        self.image.cmd()
+        self.image
+            .cmd()
             .gl_release()
             .enew(&mut event)
             .enq()
@@ -267,7 +268,8 @@ pub unsafe extern "C" fn Con_ToggleConsole_f() {
 
     if !engine.data().inside_key_event
        || cap_allow_tabbing_out_in_demos.parse(&mut engine)
-                                        .unwrap_or(0) == 0
+                                        .unwrap_or(0)
+          == 0
     {
         real!(Con_ToggleConsole_f)();
     }
@@ -541,8 +543,8 @@ fn register_cvars_and_commands(engine: &mut Engine) {
     }
 
     for cvar in &cvar::CVARS {
-        if let Err(ref e) =
-            cvar.register(engine).chain_err(|| "error registering a console variable")
+        if let Err(ref e) = cvar.register(engine)
+                                .chain_err(|| "error registering a console variable")
         {
             panic!("{}", e.display_chain());
         }
@@ -647,8 +649,7 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
         let report_opencl_error = |ref e: Error| {
             engine.con_print(&format!("Could not initialize OpenCL, proceeding without it. \
                                        Error details:\n{}",
-                                      e.display_chain())
-                              .replace('\0', "\\x00"));
+                                      e.display_chain()).replace('\0', "\\x00"));
         };
 
         let context = ocl::Context::builder().gl_context(get_opengl_context(engine))
@@ -657,14 +658,14 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
                                              .chain_err(|| "error building ocl::Context");
 
         let pro_que = context.and_then(|ctx| {
-            ocl::ProQue::builder()
+                                 ocl::ProQue::builder()
                 .context(ctx)
                 .prog_bldr(ocl::Program::builder()
                                .src(include_str!("../../cl_src/color_conversion.cl"))
                                .src(include_str!("../../cl_src/sampling.cl")))
                 .build()
                 .chain_err(|| "error building ocl::ProQue")
-        })
+                             })
                              .map(|pro_que| Box::into_raw(Box::new(pro_que)))
                              .map_err(report_opencl_error)
                              .ok();

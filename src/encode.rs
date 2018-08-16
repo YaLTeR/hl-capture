@@ -1,10 +1,10 @@
 use error_chain::ChainedError;
-use ffmpeg::{self, color, Packet, Rational};
 use ffmpeg::channel_layout::{self, ChannelLayout};
 use ffmpeg::codec::{self, encoder};
 use ffmpeg::format::{self, context};
 use ffmpeg::software::{self, resampling, scaling};
 use ffmpeg::util::frame;
+use ffmpeg::{self, color, Packet, Rational};
 use std::cmp;
 use std::sync::{Mutex, Once, ONCE_INIT};
 
@@ -84,8 +84,10 @@ impl Encoder {
         ensure!(audio_codec.is_some(), "audio encoder was not set");
         let audio_codec = audio_codec.unwrap();
 
-        let mut context = format::output(&parameters.filename)
-            .chain_err(|| "could not create the output context")?;
+        let mut context =
+            format::output(&parameters.filename).chain_err(|| {
+                                                               "could not create the output context"
+                                                           })?;
         let global = context.format()
                             .flags()
                             .contains(format::flag::GLOBAL_HEADER);
@@ -310,13 +312,16 @@ impl Encoder {
             frame.set_pts(Some(self.video_pts));
             self.video_pts += 1;
 
-            if self.video_encoder.encode(frame, &mut self.packet)
+            if self.video_encoder
+                   .encode(frame, &mut self.packet)
                    .chain_err(|| "could not encode the video frame")?
             {
-                self.packet.rescale_ts(self.time_base, self.video_stream_time_base);
+                self.packet
+                    .rescale_ts(self.time_base, self.video_stream_time_base);
                 self.packet.set_stream(self.video_stream_index);
 
-                self.packet.write_interleaved(&mut self.context)
+                self.packet
+                    .write_interleaved(&mut self.context)
                     .chain_err(|| "could not write the video packet")?;
             }
         }
@@ -328,14 +333,17 @@ impl Encoder {
         self.audio_output_frame.set_pts(Some(self.audio_pts));
         self.audio_pts += self.audio_output_frame.samples() as i64;
 
-        if self.audio_encoder.encode(&self.audio_output_frame, &mut self.packet)
+        if self.audio_encoder
+               .encode(&self.audio_output_frame, &mut self.packet)
                .chain_err(|| "could not encode the audio frame")?
         {
-            self.packet.rescale_ts((1, self.audio_output_frame.rate() as i32),
+            self.packet
+                .rescale_ts((1, self.audio_output_frame.rate() as i32),
                             self.audio_stream_time_base);
             self.packet.set_stream(self.audio_stream_index);
 
-            self.packet.write_interleaved(&mut self.context)
+            self.packet
+                .write_interleaved(&mut self.context)
                 .chain_err(|| "could not write the audio packet")?;
         }
 
@@ -377,12 +385,14 @@ impl Encoder {
             self.audio_position += to_move;
 
             if self.audio_position == self.audio_input_frame.samples() {
-                self.resampler.run(&self.audio_input_frame, &mut self.audio_output_frame)
+                self.resampler
+                    .run(&self.audio_input_frame, &mut self.audio_output_frame)
                     .chain_err(|| "could not resample the sound")?;
                 self.push_audio_frame()?;
 
                 while let Some(_) = self.resampler.delay() {
-                    self.resampler.flush(&mut self.audio_output_frame)
+                    self.resampler
+                        .flush(&mut self.audio_output_frame)
                         .chain_err(|| "could not resample the sound")?;
                     self.push_audio_frame()?;
                 }
@@ -395,13 +405,16 @@ impl Encoder {
     }
 
     fn flush(&mut self) -> Result<()> {
-        while self.video_encoder.flush(&mut self.packet)
+        while self.video_encoder
+                  .flush(&mut self.packet)
                   .chain_err(|| "could not get the packet")?
         {
-            self.packet.rescale_ts(self.time_base, self.video_stream_time_base);
+            self.packet
+                .rescale_ts(self.time_base, self.video_stream_time_base);
             self.packet.set_stream(self.video_stream_index);
 
-            self.packet.write_interleaved(&mut self.context)
+            self.packet
+                .write_interleaved(&mut self.context)
                 .chain_err(|| "could not write the packet")?;
         }
 
@@ -412,12 +425,14 @@ impl Encoder {
                 self.audio_input_frame.plane_mut(0)[i] = (0i16, 0i16);
             }
 
-            self.resampler.run(&self.audio_input_frame, &mut self.audio_output_frame)
+            self.resampler
+                .run(&self.audio_input_frame, &mut self.audio_output_frame)
                 .chain_err(|| "could not resample the sound")?;
             self.push_audio_frame()?;
 
             while let Some(_) = self.resampler.delay() {
-                self.resampler.flush(&mut self.audio_output_frame)
+                self.resampler
+                    .flush(&mut self.audio_output_frame)
                     .chain_err(|| "could not resample the sound")?;
                 self.push_audio_frame()?;
             }
@@ -425,14 +440,17 @@ impl Encoder {
             self.audio_position = 0;
         }
 
-        while self.audio_encoder.flush(&mut self.packet)
+        while self.audio_encoder
+                  .flush(&mut self.packet)
                   .chain_err(|| "could not get the packet")?
         {
-            self.packet.rescale_ts((1, self.audio_output_frame.rate() as i32),
+            self.packet
+                .rescale_ts((1, self.audio_output_frame.rate() as i32),
                             self.audio_stream_time_base);
             self.packet.set_stream(self.audio_stream_index);
 
-            self.packet.write_interleaved(&mut self.context)
+            self.packet
+                .write_interleaved(&mut self.context)
                 .chain_err(|| "could not write the packet")?;
         }
 
@@ -445,7 +463,8 @@ impl Encoder {
         self.finished = true;
 
         self.flush().chain_err(|| "unable to flush the encoder")?;
-        self.context.write_trailer()
+        self.context
+            .write_trailer()
             .chain_err(|| "could not write the trailer")?;
 
         Ok(())
@@ -514,7 +533,8 @@ impl PixFmtConverterInner {
 
     #[inline]
     fn convert(&mut self, frame: &frame::Video) -> Result<&mut frame::Video> {
-        self.context.run(frame, &mut self.output_frame)
+        self.context
+            .run(frame, &mut self.output_frame)
             .chain_err(|| "could not convert the frame to the correct color format")?;
 
         Ok(&mut self.output_frame)

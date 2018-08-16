@@ -108,7 +108,8 @@ impl CVar {
         where T: FromStr,
               <T as FromStr>::Err: ::std::error::Error + Send + 'static
     {
-        let string = self.to_string(engine).chain_err(|| "could not get this CVar's string value")?;
+        let string = self.to_string(engine)
+                         .chain_err(|| "could not get this CVar's string value")?;
         string.parse()
               .chain_err(|| "could not convert the CVar string to the desired type")
     }

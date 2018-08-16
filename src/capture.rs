@@ -1,9 +1,9 @@
 use error_chain::ChainedError;
-use ffmpeg::{format, Rational};
 use ffmpeg::frame::Video as VideoFrame;
+use ffmpeg::{format, Rational};
 use std::ops::Deref;
-use std::sync::{Mutex, Once, RwLock, ONCE_INIT};
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::{Mutex, Once, RwLock, ONCE_INIT};
 use std::thread;
 
 use encode::{Encoder, EncoderParameters};
@@ -111,7 +111,8 @@ impl VideoBuffer {
 
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         self.data_is_in_frame = false;
-        self.data.resize((self.width * self.height * self.components as u32) as usize,
+        self.data
+            .resize((self.width * self.height * self.components as u32) as usize,
                     0);
 
         self.data.as_mut_slice()
@@ -120,7 +121,8 @@ impl VideoBuffer {
     pub fn get_frame(&mut self) -> &mut VideoFrame {
         self.data_is_in_frame = true;
 
-        if self.width != self.frame.width() || self.height != self.frame.height()
+        if self.width != self.frame.width()
+           || self.height != self.frame.height()
            || self.format != self.frame.format()
         {
             self.frame = VideoFrame::new(self.format, self.width, self.height);
@@ -131,7 +133,8 @@ impl VideoBuffer {
 
     pub fn copy_to_frame(&self, frame: &mut VideoFrame) {
         // Make sure the frame is of correct size.
-        if self.width != frame.width() || self.height != frame.height()
+        if self.width != frame.width()
+           || self.height != frame.height()
            || self.format != frame.format()
         {
             *frame = VideoFrame::new(self.format, self.width, self.height);
@@ -234,19 +237,20 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
 
-                encoder = Encoder::start(&params)
-                    .chain_err(|| "could not start the encoder; check your terminal (Half-Life's \
-                                   standard output) for ffmpeg messages")
-                    .map_err(|ref e| {
-                                 *CAPTURING.write().unwrap() = false;
-                                 drop_frames = true;
+                encoder = Encoder::start(&params).chain_err(|| {
+                              "could not start the encoder; check your terminal (Half-Life's \
+                               standard output) for ffmpeg messages"
+                          })
+                          .map_err(|ref e| {
+                                       *CAPTURING.write().unwrap() = false;
+                                       drop_frames = true;
 
-                                 event_sender
+                                       event_sender
                                      .send(GameThreadEvent::Message(
                                                format!("{}", e.display_chain())))
                                      .unwrap();
-                             })
-                    .ok();
+                                   })
+                          .ok();
 
                 if let Some(ref encoder) = encoder {
                     event_sender.send(GameThreadEvent::EncoderPixelFormat(encoder.format()))
@@ -531,19 +535,22 @@ fn parse_pixel_format(string: &str) -> Result<format::Pixel> {
 }
 
 macro_rules! to_string {
-    ($engine:expr, $cvar:expr) => (
-        $cvar.to_string($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
-    )
+    ($engine:expr, $cvar:expr) => {
+        $cvar.to_string($engine)
+             .chain_err(|| concat!("invalid ", stringify!($cvar)))?
+    };
 }
 
 macro_rules! parse {
-    ($engine:expr, $cvar:expr) => (
-        $cvar.parse($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
-    );
+    ($engine:expr, $cvar:expr) => {
+        $cvar.parse($engine)
+             .chain_err(|| concat!("invalid ", stringify!($cvar)))?
+    };
 
-    ($engine:expr, $cvar:expr, $type:ty) => (
-        $cvar.parse::<$type>($engine).chain_err(|| concat!("invalid ", stringify!($cvar)))?
-    )
+    ($engine:expr, $cvar:expr, $type:ty) => {
+        $cvar.parse::<$type>($engine)
+             .chain_err(|| concat!("invalid ", stringify!($cvar)))?
+    };
 }
 
 /// Parses the CVar values into `EncoderParameters`.
@@ -584,9 +591,9 @@ fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
 /// Starts and stops the encoder.
 fn test_encoder(parameters: &EncoderParameters) -> Result<()> {
     let mut encoder = Encoder::start(parameters).chain_err(|| {
-        "could not start the encoder; check your terminal (Half-Life's \
-         standard output) for ffmpeg messages"
-    })?;
+                          "could not start the encoder; check your terminal (Half-Life's \
+                           standard output) for ffmpeg messages"
+                      })?;
     encoder.finish()
            .chain_err(|| "could not finish the encoder")?;
     Ok(())

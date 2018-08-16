@@ -95,7 +95,8 @@ impl FPSConverter for SamplingConverter {
                 FrameCapture::OpenGL(read_pixels) => {
                     let (w, h) = self.private.video_resolution;
                     self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
-                    self.private.gl_sampling_buffer
+                    self.private
+                        .gl_sampling_buffer
                         .resize((w * h * 3) as usize, 0f32);
 
                     read_pixels(engine, (w, h), &mut self.private.gl_read_buffer);
@@ -125,7 +126,8 @@ impl FPSConverter for SamplingConverter {
                 FrameCapture::OpenGL(read_pixels) => {
                     let (w, h) = self.private.video_resolution;
                     self.private.gl_read_buffer.resize((w * h * 3) as usize, 0);
-                    self.private.gl_sampling_buffer
+                    self.private
+                        .gl_sampling_buffer
                         .resize((w * h * 3) as usize, 0f32);
 
                     read_pixels(engine, (w, h), &mut self.private.gl_read_buffer);
@@ -147,7 +149,8 @@ impl FPSConverter for SamplingConverter {
                     if additional_frames > 0 {
                         let mut buf = capture::get_buffer(engine, (w, h));
                         buf.set_format(format::Pixel::RGB24);
-                        buf.as_mut_slice().copy_from_slice(&self.private.gl_read_buffer);
+                        buf.as_mut_slice()
+                           .copy_from_slice(&self.private.gl_read_buffer);
                         capture::capture(engine, buf, additional_frames);
 
                         self.remainder -= additional_frames as f64;
@@ -270,12 +273,12 @@ impl SamplingConverterPrivate {
             .expect("changing from fullscreen to windowed is not supported");
 
         let pro_que = hw::get_pro_que(engine).unwrap();
-        let temp_image = hw::build_ocl_image(engine,
-                                             pro_que,
-                                             ocl::MemFlags::new().read_only().host_write_only(),
-                                             ocl::enums::ImageChannelDataType::Float,
-                                             self.video_resolution.into())
-                         .expect("building an OpenCL image");
+        let temp_image =
+            hw::build_ocl_image(engine,
+                                pro_que,
+                                ocl::MemFlags::new().read_only().host_write_only(),
+                                ocl::enums::ImageChannelDataType::Float,
+                                self.video_resolution.into()).expect("building an OpenCL image");
 
         let backup_buffer = self.ocl_backup_buffer.take().unwrap();
         temp_image.write(&backup_buffer)
@@ -296,7 +299,7 @@ impl SamplingConverterPrivate {
 impl OclRuntimeData {
     fn new(engine: &Engine, (w, h): (u32, u32)) -> Option<Self> {
         hw::get_pro_que(engine).map(|pro_que| {
-            let rv = Self {
+                                   let rv = Self {
                 ocl_buffers: [
                     hw::build_ocl_image(engine,
                                         pro_que,
@@ -322,10 +325,10 @@ impl OclRuntimeData {
                 ocl_current_buffer_index: 0,
             };
 
-            ocl_fill_with_black(engine, rv.src_buffer());
+                                   ocl_fill_with_black(engine, rv.src_buffer());
 
-            rv
-        })
+                                   rv
+                               })
     }
 
     #[inline]
