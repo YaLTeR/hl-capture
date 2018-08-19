@@ -26,7 +26,7 @@ Check the [wiki](https://github.com/YaLTeR/hl-capture/wiki/Installation-and-usag
 
 ## Building
 1. Get stable Rust, then do `rustup target add i686-unknown-linux-gnu`
-2. Install **32-bit** FFMpeg libraries.
+2. Install **32-bit** FFMpeg libraries. FFMpeg **3.4** is known to work; FFMpeg 4 will not work.
 3. Install **32-bit** SDL2.
 4. Install **32-bit** OpenCL.
 5. `PKG_CONFIG_ALLOW_CROSS=1 cargo build --release`
