@@ -41,14 +41,14 @@ script:
 - cargo build --verbose
 - if [ "$TRAVIS_RUST_VERSION" = "nightly" ]; then
     cargo doc --no-deps --document-private-items;
-    cp .travis/index.html target/doc;
+    cp .travis/index.html target/i686-unknown-linux-gnu/doc;
   fi
 - cargo test --verbose
 deploy:
   provider: pages
   skip_cleanup: true
   github_token: "$GITHUB_TOKEN"
-  local_dir: target/doc
+  local_dir: target/i686-unknown-linux-gnu/doc
   on:
     branch: master
     rust: nightly
