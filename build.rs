@@ -1,12 +1,17 @@
+extern crate proc_macro2;
 extern crate syn;
 extern crate walkdir;
 
+use proc_macro2::TokenTree;
 use std::env;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-use syn::visit::Visitor;
+use syn::{
+    visit::{self, Visit},
+    Macro,
+};
 
 fn main() {
     // Parse all .rs files to collect everything which implements Command.
@@ -67,9 +72,9 @@ fn get_data(path: &Path) -> Data {
                     .read_to_string(&mut source)
                     .unwrap();
 
-    if let Ok(_crate) = syn::parse_crate(&source) {
+    if let Ok(file) = syn::parse_file(&source) {
         let mut visitor = MyVisitor::new();
-        visitor.visit_crate(&_crate);
+        visitor.visit_file(&file);
 
         Data { commands: visitor.commands,
                cvars: visitor.cvars, }
@@ -126,28 +131,30 @@ impl MyVisitor {
     }
 }
 
-impl Visitor for MyVisitor {
-    fn visit_mac(&mut self, mac: &syn::Mac) {
-        if mac.path == "command".into() {
-            if let Some(&syn::TokenTree::Delimited(ref delimited)) = mac.tts.iter().next() {
-                if let Some(&syn::TokenTree::Token(ref token)) = delimited.tts.iter().next() {
-                    if let &syn::Token::Ident(ref ident) = token {
-                        self.commands.push(ident.as_ref().to_owned());
-                    }
-                }
+impl<'ast> Visit<'ast> for MyVisitor {
+    fn visit_macro(&mut self, mac: &'ast Macro) {
+        if mac.path
+              .segments
+              .first()
+              .map(|x| x.value().ident == "command")
+              .unwrap_or(false)
+        {
+            if let Some(TokenTree::Ident(ident)) = mac.tts.clone().into_iter().next() {
+                self.commands.push(format!("{}", ident));
             }
         }
 
-        if mac.path == "cvar".into() {
-            if let Some(&syn::TokenTree::Delimited(ref delimited)) = mac.tts.iter().next() {
-                if let Some(&syn::TokenTree::Token(ref token)) = delimited.tts.iter().next() {
-                    if let &syn::Token::Ident(ref ident) = token {
-                        self.cvars.push(ident.as_ref().to_owned());
-                    }
-                }
+        if mac.path
+              .segments
+              .first()
+              .map(|x| x.value().ident == "cvar")
+              .unwrap_or(false)
+        {
+            if let Some(TokenTree::Ident(ident)) = mac.tts.clone().into_iter().next() {
+                self.cvars.push(format!("{}", ident));
             }
         }
 
-        syn::visit::walk_mac(self, mac);
+        visit::visit_macro(self, mac);
     }
 }

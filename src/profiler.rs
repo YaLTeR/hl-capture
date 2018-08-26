@@ -1,8 +1,6 @@
 use fine_grained::Stopwatch;
 use std::collections::HashMap;
 
-use errors::*;
-
 /// A profiler that gathers average run times code sections.
 pub struct Profiler {
     main_watch: Stopwatch,

@@ -19,8 +19,7 @@ macro_rules! ptr {
 macro_rules! find {
     ($handle:expr, $symbol:tt) => {{
         *(&$handle.sym($symbol)
-                  .chain_err(|| concat!("couldn't find ", $symbol))? as *const _
-          as *const _)
+                  .context(concat!("couldn't find ", $symbol))? as *const _ as *const _)
     }};
 }
 

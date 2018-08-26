@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
-use error_chain::ChainedError;
+use failure::{Error, ResultExt};
 use ffmpeg::format;
 use gl;
 use gl::types::*;
@@ -13,6 +13,7 @@ use std::cmp;
 use std::ffi::{CStr, CString};
 use std::mem;
 use std::ptr;
+use std::result;
 use std::slice;
 
 use capture::{self, GameThreadEvent};
@@ -20,10 +21,13 @@ use command;
 use cvar;
 use dl;
 use encode;
-use engine::Engine;
-use errors::*;
+use engine::{Engine, MainThreadMarker};
 use fps_converter::*;
 use sdl;
+
+use utils::format_error;
+
+type Result<T> = result::Result<T, Error>;
 
 // Stuff from these variables should ONLY be accessed from the main game thread.
 static mut FUNCTIONS: Option<Functions> = None;
@@ -87,12 +91,16 @@ pub struct OclGlTexture {
 }
 
 pub enum FrameCapture {
-    OpenGL(fn(&Engine, (u32, u32), &mut [u8])),
+    OpenGL(fn(MainThreadMarker, (u32, u32), &mut [u8])),
     OpenCL(OclGlTexture),
 }
 
 impl OclGlTexture {
-    fn new(_: &Engine, texture: GLuint, queue: ocl::Queue, dims: ocl::SpatialDims) -> Self {
+    fn new(_: MainThreadMarker,
+           texture: GLuint,
+           queue: ocl::Queue,
+           dims: ocl::SpatialDims)
+           -> Self {
         unsafe {
             gl::Finish();
         }
@@ -208,19 +216,19 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                          launcherFactory: *mut c_void,
                                          filesystemFactory: *mut c_void)
                                          -> c_int {
-    let engine = Engine::new();
+    let mut engine = Engine::new();
 
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
-    if let Err(ref e) = refresh_pointers(&engine).chain_err(|| "error refreshing pointers") {
-        panic!("{}", e.display_chain());
+    if let Err(e) = refresh_pointers(engine.marker().1).context("error refreshing pointers") {
+        panic!("{}", &format_error(&e.into()));
     }
 
     // Initialize the encoding.
     encode::initialize();
 
     // Initialize the capturing.
-    capture::initialize(&engine);
+    capture::initialize(engine.marker().1);
 
     let rv = real!(RunListenServer)(instance,
                                     basedir,
@@ -229,20 +237,22 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                     launcherFactory,
                                     filesystemFactory);
 
-    if let Some(FPSConverters::Sampling(ref mut sampling_conv)) = engine.data().fps_converter {
-        sampling_conv.backup_and_free_ocl_data(&engine);
+    if let Some(FPSConverters::Sampling(mut sampling_conv)) = engine.data_mut().fps_converter.take()
+    {
+        sampling_conv.backup_and_free_ocl_data(&mut engine);
+        engine.data_mut().fps_converter = Some(FPSConverters::Sampling(sampling_conv));
     }
 
-    if let Some(Some(buffers)) = engine.data().ocl_yuv_buffers.take() {
+    if let Some(Some(buffers)) = engine.data_mut().ocl_yuv_buffers.take() {
         drop(Box::from_raw(buffers));
     }
 
-    if let Some(Some(pro_que)) = engine.data().pro_que.take() {
+    if let Some(Some(pro_que)) = engine.data_mut().pro_que.take() {
         drop(Box::from_raw(pro_que));
     }
 
     // Since hw.so is getting unloaded, reset all pointers.
-    reset_pointers(&engine);
+    reset_pointers(engine.marker().1);
 
     rv
 }
@@ -254,7 +264,7 @@ pub unsafe extern "C" fn CL_Disconnect() {
         let mut engine = Engine::new();
 
         if cap_playdemostop.parse(&mut engine).unwrap_or(0) != 0 {
-            capture::stop(&engine);
+            capture::stop(&mut engine);
         }
     }
 
@@ -284,12 +294,12 @@ pub unsafe extern "C" fn GL_SetMode(mainwindow: c_int,
                                     pszDriver: *const c_char,
                                     pszCmdLine: *const c_char)
                                     -> c_int {
-    let engine = Engine::new();
-    engine.data().inside_gl_setmode = true;
+    let mut engine = Engine::new();
+    engine.data_mut().inside_gl_setmode = true;
 
     let rv = real!(GL_SetMode)(mainwindow, pmaindc, pbaseRC, fD3D, pszDriver, pszCmdLine);
 
-    engine.data().inside_gl_setmode = false;
+    engine.data_mut().inside_gl_setmode = false;
 
     rv
 }
@@ -320,10 +330,10 @@ pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
 /// Handles key callbacks.
 #[no_mangle]
 pub unsafe extern "C" fn Key_Event(key: c_int, down: c_int) {
-    let engine = Engine::new();
-    engine.data().inside_key_event = true;
+    let mut engine = Engine::new();
+    engine.data_mut().inside_key_event = true;
     real!(Key_Event)(key, down);
-    engine.data().inside_key_event = false;
+    engine.data_mut().inside_key_event = false;
 }
 
 /// Initializes the hunk memory.
@@ -354,10 +364,10 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// Mixes sound into the output buffer using the paintbuffer.
 #[no_mangle]
 pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
-    let engine = Engine::new();
+    let mut engine = Engine::new();
 
     if !capture::is_capturing() {
-        engine.data().capture_sound = false;
+        engine.data_mut().capture_sound = false;
         real!(S_PaintChannels)(endtime);
         return;
     }
@@ -369,25 +379,28 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
             SoundCaptureMode::Remaining => capture::get_capture_parameters(&engine).sound_extra,
         };
         let speed = (**ptr!(shm)).speed;
-        let samples = frametime * speed as f64 + engine.data().sound_remainder;
+        let samples = frametime * f64::from(speed) + engine.data().sound_remainder;
         let samples_rounded = match engine.data().sound_capture_mode {
             SoundCaptureMode::Normal => samples.floor(),
             SoundCaptureMode::Remaining => samples.ceil(),
         };
 
-        engine.data().sound_remainder = samples - samples_rounded;
+        engine.data_mut().sound_remainder = samples - samples_rounded;
 
         AUDIO_BUFFER.with(|b| {
-                              let mut buf = capture::get_audio_buffer(&engine);
+                              let mut buf = capture::get_audio_buffer(engine.marker().1);
                               buf.data_mut().clear();
                               *b.borrow_mut() = Some(buf);
                           });
 
         real!(S_PaintChannels)(paintedtime + samples_rounded as i32);
 
-        AUDIO_BUFFER.with(|b| capture::capture_audio(&engine, b.borrow_mut().take().unwrap()));
+        AUDIO_BUFFER.with(|b| {
+                              capture::capture_audio(engine.marker().1,
+                                                     b.borrow_mut().take().unwrap())
+                          });
 
-        engine.data().capture_sound = false;
+        engine.data_mut().capture_sound = false;
     }
 }
 
@@ -407,15 +420,15 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
                               let volume =
                                   (capture::get_capture_parameters(&engine).volume * 256f32) as i32;
 
-                              for i in 0..(end - paintedtime) as usize * 2 {
+                              for sample in
+                                  paintbuffer.iter().take((end - paintedtime) as usize * 2)
+                              {
                                   // Clamping as done in Snd_WriteLinearBlastStereo16().
                                   let l16 = cmp::min(32767,
-                                                     cmp::max(-32768,
-                                                              (paintbuffer[i].left * volume) >> 8))
+                                                     cmp::max(-32768, (sample.left * volume) >> 8))
                                             as i16;
                                   let r16 = cmp::min(32767,
-                                                     cmp::max(-32768,
-                                                              (paintbuffer[i].right * volume) >> 8))
+                                                     cmp::max(-32768, (sample.right * volume) >> 8))
                                             as i16;
 
                                   buf.push((l16, r16));
@@ -429,39 +442,41 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
 /// Flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
-    let engine = Engine::new();
+    let mut engine = Engine::new();
 
     // Print all messages that happened.
-    while let Some(e) = capture::get_event(&engine) {
+    while let Some(e) = capture::get_event(engine.marker().1) {
         match e {
             GameThreadEvent::Message(msg) => con_print(&msg),
             GameThreadEvent::EncoderPixelFormat(fmt) => {
-                engine.data().encoder_pixel_format = Some(fmt)
+                engine.data_mut().encoder_pixel_format = Some(fmt)
             }
         }
     }
 
     // If the encoding just started, wait for the pixel format.
     while capture::is_capturing() && engine.data().encoder_pixel_format.is_none() {
-        match capture::get_event_block(&engine) {
+        match capture::get_event_block(engine.marker().1) {
             GameThreadEvent::Message(msg) => con_print(&msg),
             GameThreadEvent::EncoderPixelFormat(fmt) => {
-                engine.data().encoder_pixel_format = Some(fmt)
+                engine.data_mut().encoder_pixel_format = Some(fmt)
             }
         }
     }
 
     if capture::is_capturing() {
         // Always capture sound.
-        engine.data().capture_sound = true;
+        engine.data_mut().capture_sound = true;
 
-        match *engine.data().fps_converter.as_mut().unwrap() {
-            FPSConverters::Simple(ref mut simple_conv) => {
-                simple_conv.time_passed(&engine, *ptr!(host_frametime), capture_frame);
+        match engine.data_mut().fps_converter.take().unwrap() {
+            FPSConverters::Simple(mut simple_conv) => {
+                simple_conv.time_passed(&mut engine, *ptr!(host_frametime), capture_frame);
+                engine.data_mut().fps_converter = Some(FPSConverters::Simple(simple_conv));
             }
 
-            FPSConverters::Sampling(ref mut sampling_conv) => {
-                sampling_conv.time_passed(&engine, *ptr!(host_frametime), capture_frame);
+            FPSConverters::Sampling(mut sampling_conv) => {
+                sampling_conv.time_passed(&mut engine, *ptr!(host_frametime), capture_frame);
+                engine.data_mut().fps_converter = Some(FPSConverters::Sampling(sampling_conv));
             }
         }
     }
@@ -486,13 +501,14 @@ pub unsafe fn VideoMode_IsWindowed() -> c_int {
 }
 
 /// Obtains and stores all necessary function and variable addresses.
-fn refresh_pointers(_: &Engine) -> Result<()> {
-    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).chain_err(|| "couldn't load hw.so")?;
+fn refresh_pointers(_: MainThreadMarker) -> Result<()> {
+    let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).context("couldn't load hw.so")?;
 
     unsafe {
-        FUNCTIONS = Some(Functions { RunListenServer:
-                                         find!(hw,
-                                       "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"),
+        FUNCTIONS = Some(Functions { RunListenServer: find!(
+            hw,
+            "_Z15RunListenServerPvPcS0_S0_PFP14IBaseInterfacePKcPiES7_"
+        ),
                                      CL_Disconnect: find!(hw, "CL_Disconnect"),
                                      Cmd_AddCommand: find!(hw, "Cmd_AddCommand"),
                                      Cmd_Argc: find!(hw, "Cmd_Argc"),
@@ -507,8 +523,10 @@ fn refresh_pointers(_: &Engine) -> Result<()> {
                                      S_PaintChannels: find!(hw, "S_PaintChannels"),
                                      S_TransferStereo16: find!(hw, "S_TransferStereo16"),
                                      Sys_VID_FlipScreen: find!(hw, "_Z18Sys_VID_FlipScreenv"),
-                                     VideoMode_GetCurrentVideoMode:
-                                         find!(hw, "VideoMode_GetCurrentVideoMode"),
+                                     VideoMode_GetCurrentVideoMode: find!(
+            hw,
+            "VideoMode_GetCurrentVideoMode"
+        ),
                                      VideoMode_IsWindowed: find!(hw, "VideoMode_IsWindowed"), });
 
         POINTERS = Some(Pointers { cls: find!(hw, "cls"),
@@ -527,7 +545,7 @@ fn refresh_pointers(_: &Engine) -> Result<()> {
 
 /// Resets all pointers to their default values.
 #[inline]
-fn reset_pointers(_: &Engine) {
+fn reset_pointers(_: MainThreadMarker) {
     unsafe {
         FUNCTIONS = None;
         POINTERS = None;
@@ -543,10 +561,10 @@ fn register_cvars_and_commands(engine: &mut Engine) {
     }
 
     for cvar in &cvar::CVARS {
-        if let Err(ref e) = cvar.register(engine)
-                                .chain_err(|| "error registering a console variable")
+        if let Err(e) = cvar.register(engine)
+                            .context("error registering a console variable")
         {
-            panic!("{}", e.display_chain());
+            panic!("{}", format_error(&e.into()));
         }
     }
 }
@@ -604,7 +622,7 @@ pub unsafe fn cmd_argv(index: u32) -> String {
 }
 
 /// Returns the current game resolution.
-pub fn get_resolution(_: &Engine) -> (u32, u32) {
+pub fn get_resolution(_: MainThreadMarker) -> (u32, u32) {
     let mut width;
     let mut height;
 
@@ -628,52 +646,55 @@ pub fn get_resolution(_: &Engine) -> (u32, u32) {
 
 /// Resets the sound capture remainder.
 #[inline]
-pub fn reset_sound_capture_remainder(engine: &Engine) {
-    engine.data().sound_remainder = 0f64;
+pub fn reset_sound_capture_remainder(engine: &mut Engine) {
+    engine.data_mut().sound_remainder = 0f64;
 }
 
 /// Captures the remaining and extra sound.
 #[inline]
-pub fn capture_remaining_sound(engine: &Engine) {
-    engine.data().sound_capture_mode = SoundCaptureMode::Remaining;
-    engine.data().capture_sound = true;
+pub fn capture_remaining_sound(engine: &mut Engine) {
+    engine.data_mut().sound_capture_mode = SoundCaptureMode::Remaining;
+    engine.data_mut().capture_sound = true;
     unsafe {
         S_PaintChannels(0);
     }
-    engine.data().sound_capture_mode = SoundCaptureMode::Normal;
+    engine.data_mut().sound_capture_mode = SoundCaptureMode::Normal;
 }
 
 /// Returns the ocl `ProCue`.
-pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
+pub fn get_pro_que(engine: &mut Engine) -> Option<&mut ocl::ProQue> {
     if engine.data().pro_que.is_none() {
-        let report_opencl_error = |ref e: Error| {
-            engine.con_print(&format!("Could not initialize OpenCL, proceeding without it. \
-                                       Error details:\n{}",
-                                      e.display_chain()).replace('\0', "\\x00"));
-        };
-
-        let context = ocl::Context::builder().gl_context(get_opengl_context(engine))
+        let context = ocl::Context::builder().gl_context(get_opengl_context(engine.marker().1))
                                              .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
                                              .build()
-                                             .chain_err(|| "error building ocl::Context");
+                                             .context("error building ocl::Context");
 
         let pro_que = context.and_then(|ctx| {
-                                 ocl::ProQue::builder()
-                .context(ctx)
-                .prog_bldr(ocl::Program::builder()
-                               .src(include_str!("../../cl_src/color_conversion.cl"))
-                               .src(include_str!("../../cl_src/sampling.cl")))
-                .build()
-                .chain_err(|| "error building ocl::ProQue")
+                                 ocl::ProQue::builder().context(ctx)
+                                                       .prog_bldr({
+                                                           let mut builder =
+                                                               ocl::Program::builder();
+                                                           builder
+                            .src(include_str!("../../cl_src/color_conversion.cl"))
+                            .src(include_str!("../../cl_src/sampling.cl"));
+                                                           builder
+                                                       })
+                                                       .build()
+                                                       .context("error building ocl::ProQue")
                              })
                              .map(|pro_que| Box::into_raw(Box::new(pro_que)))
-                             .map_err(report_opencl_error)
+                             .map_err(|e| {
+                                          engine.con_print(&format!("Could not initialize OpenCL, \
+                                                            proceeding without it. \
+                                                            Error details:\n{}",
+                                                           e).replace('\0', "\\x00"));
+                                      })
                              .ok();
 
-        engine.data().pro_que = Some(pro_que);
+        engine.data_mut().pro_que = Some(pro_que);
     }
 
-    engine.data()
+    engine.data_mut()
           .pro_que
           .as_mut()
           .unwrap()
@@ -682,52 +703,39 @@ pub fn get_pro_que(engine: &Engine) -> Option<&mut ocl::ProQue> {
 }
 
 /// Builds an ocl `Buffer` with the specified length.
-fn build_ocl_buffer(engine: &Engine,
-                    pro_que: &ocl::ProQue,
-                    length: usize)
-                    -> Option<ocl::Buffer<u8>> {
-    ocl::Buffer::<u8>::builder().queue(pro_que.queue().clone())
-                                .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
-                                .dims(length)
-                                .build()
-                                .chain_err(|| "could not build the OpenCL buffer")
-                                .map_err(|ref e| {
-                                             engine.con_print(&format!("{}", e.display_chain()));
-                                         })
-                                .ok()
+fn build_ocl_buffer(pro_que: &ocl::ProQue, length: usize) -> Result<ocl::Buffer<u8>> {
+    Ok(ocl::Buffer::<u8>::builder().queue(pro_que.queue().clone())
+                                   .flags(ocl::flags::MemFlags::new().write_only().host_read_only())
+                                   .len(length)
+                                   .build()
+                                   .context("could not build the OpenCL buffer")?)
 }
 
 /// Builds an ocl `Image` with the specified dimensions.
-pub fn build_ocl_image<T: ocl::OclPrm>(engine: &Engine,
-                                       pro_que: &ocl::ProQue,
+pub fn build_ocl_image<T: ocl::OclPrm>(pro_que: &ocl::ProQue,
                                        mem_flags: ocl::MemFlags,
                                        data_type: ocl::enums::ImageChannelDataType,
                                        dims: ocl::SpatialDims)
-                                       -> Option<ocl::Image<T>> {
-    ocl::Image::<T>::builder().channel_order(ocl::enums::ImageChannelOrder::Rgba)
-                              .channel_data_type(data_type)
-                              .image_type(ocl::enums::MemObjectType::Image2d)
-                              .dims(dims)
-                              .flags(mem_flags)
-                              .queue(pro_que.queue().clone())
-                              .build()
-                              .chain_err(|| "could not build the OpenCL image")
-                              .map_err(|ref e| {
-                                           engine.con_print(&format!("{}", e.display_chain()));
-                                       })
-                              .ok()
+                                       -> Result<ocl::Image<T>> {
+    Ok(ocl::Image::<T>::builder().channel_order(ocl::enums::ImageChannelOrder::Rgba)
+                                 .channel_data_type(data_type)
+                                 .image_type(ocl::enums::MemObjectType::Image2d)
+                                 .dims(dims)
+                                 .flags(mem_flags)
+                                 .queue(pro_que.queue().clone())
+                                 .build()
+                                 .context("could not build the OpenCL image")?)
 }
 
 /// Builds ocl YUV buffers with the specified length.
-fn build_yuv_buffers(engine: &Engine,
-                     pro_que: &ocl::ProQue,
+fn build_yuv_buffers(pro_que: &ocl::ProQue,
                      (Y_len, U_len, V_len): (usize, usize, usize))
                      -> Option<*mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
-    let Y_buf = build_ocl_buffer(engine, pro_que, Y_len);
-    let U_buf = build_ocl_buffer(engine, pro_que, U_len);
-    let V_buf = build_ocl_buffer(engine, pro_que, V_len);
+    let Y_buf = build_ocl_buffer(pro_que, Y_len);
+    let U_buf = build_ocl_buffer(pro_que, U_len);
+    let V_buf = build_ocl_buffer(pro_que, V_len);
 
-    if let (Some(Y_buf), Some(U_buf), Some(V_buf)) = (Y_buf, U_buf, V_buf) {
+    if let (Ok(Y_buf), Ok(U_buf), Ok(V_buf)) = (Y_buf, U_buf, V_buf) {
         Some(Box::into_raw(Box::new((Y_buf, U_buf, V_buf))))
     } else {
         None
@@ -735,17 +743,16 @@ fn build_yuv_buffers(engine: &Engine,
 }
 
 /// Returns the ocl buffers for Y, U and V.
-fn get_yuv_buffers<'a>(engine: &Engine,
-                       pro_que: &'a ocl::ProQue,
+fn get_yuv_buffers<'a>(engine: &mut Engine,
                        (Y_len, U_len, V_len): (usize, usize, usize))
                        -> Option<&'a mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
     if engine.data().ocl_yuv_buffers.is_none() {
-        let buffers = build_yuv_buffers(engine, pro_que, (Y_len, U_len, V_len));
-        engine.data().ocl_yuv_buffers = Some(buffers);
+        let buffers = build_yuv_buffers(get_pro_que(engine).unwrap(), (Y_len, U_len, V_len));
+        engine.data_mut().ocl_yuv_buffers = Some(buffers);
     }
 
     // Verify the buffer sizes.
-    match engine.data()
+    match engine.data_mut()
                 .ocl_yuv_buffers
                 .as_mut()
                 .unwrap()
@@ -764,12 +771,13 @@ fn get_yuv_buffers<'a>(engine: &Engine,
 
                 // Now drop the buffers themselves.
                 drop(unsafe {
-                         Box::from_raw(engine.data().ocl_yuv_buffers.take().unwrap().unwrap())
+                         Box::from_raw(engine.data_mut().ocl_yuv_buffers.take().unwrap().unwrap())
                      });
 
                 // And allocate new ones.
-                let buffers = build_yuv_buffers(engine, pro_que, (Y_len, U_len, V_len));
-                engine.data().ocl_yuv_buffers = Some(buffers);
+                let buffers =
+                    build_yuv_buffers(get_pro_que(engine).unwrap(), (Y_len, U_len, V_len));
+                engine.data_mut().ocl_yuv_buffers = Some(buffers);
 
                 buffers.map(|ptr| unsafe { ptr.as_mut() }.unwrap())
             } else {
@@ -779,7 +787,7 @@ fn get_yuv_buffers<'a>(engine: &Engine,
                 // drop(U_buf);
                 // drop(V_buf);
 
-                engine.data()
+                engine.data_mut()
                       .ocl_yuv_buffers
                       .as_mut()
                       .unwrap()
@@ -792,7 +800,9 @@ fn get_yuv_buffers<'a>(engine: &Engine,
 }
 
 /// Captures and returns the current frame.
-fn capture_frame(engine: &Engine) -> FrameCapture {
+fn capture_frame(engine: &mut Engine) -> FrameCapture {
+    let (engine, marker) = engine.marker_mut();
+
     let texture = unsafe { *ptr!(s_BackBufferFBO) }.Tex;
     let pro_que = if texture != 0 {
         get_pro_que(engine)
@@ -801,9 +811,9 @@ fn capture_frame(engine: &Engine) -> FrameCapture {
     };
 
     if let Some(pro_que) = pro_que {
-        let (w, h) = get_resolution(engine);
+        let (w, h) = get_resolution(marker);
 
-        FrameCapture::OpenCL(OclGlTexture::new(engine,
+        FrameCapture::OpenCL(OclGlTexture::new(marker,
                                                texture,
                                                pro_que.queue().clone(),
                                                (w, h).into()))
@@ -822,12 +832,11 @@ fn ocl_color_conversion_func_name(target: format::Pixel) -> Option<&'static str>
 }
 
 /// Reads the given `ocl::Image` into the buffer.
-pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
+pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &mut Engine,
                                                image: &ocl::Image<T>,
                                                buf: &mut capture::VideoBuffer) {
-    let pro_que = get_pro_que(engine).unwrap();
-
     let encoder_pixel_format = engine.data().encoder_pixel_format.unwrap();
+
     let func_name = ocl_color_conversion_func_name(encoder_pixel_format);
 
     let yuv_buffers = if func_name.is_some() {
@@ -835,29 +844,33 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
         let frame = buf.get_frame();
 
         get_yuv_buffers(engine,
-                        pro_que,
                         (frame.data(0).len(), frame.data(1).len(), frame.data(2).len()))
     } else {
         None
     };
+
+    let pro_que = get_pro_que(engine).unwrap();
 
     if yuv_buffers.is_some() {
         let frame = buf.get_frame();
 
         let &mut (ref Y_buf, ref U_buf, ref V_buf) = yuv_buffers.unwrap();
 
-        let kernel = pro_que.create_kernel(func_name.unwrap())
-                            .unwrap()
-                            .gws(image.dims())
-                            .arg_img(image)
-                            .arg_scl(frame.stride(0))
-                            .arg_scl(frame.stride(1))
-                            .arg_scl(frame.stride(2))
-                            .arg_buf(Y_buf)
-                            .arg_buf(U_buf)
-                            .arg_buf(V_buf);
+        let kernel = pro_que.kernel_builder(func_name.unwrap())
+                            .global_work_size(image.dims())
+                            .arg(image)
+                            .arg(frame.stride(0))
+                            .arg(frame.stride(1))
+                            .arg(frame.stride(2))
+                            .arg(Y_buf)
+                            .arg(U_buf)
+                            .arg(V_buf)
+                            .build()
+                            .unwrap();
 
-        kernel.enq().expect("kernel.enq()");
+        unsafe {
+            kernel.enq().expect("kernel.enq()");
+        }
 
         Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
         U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
@@ -865,16 +878,19 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
     } else {
         buf.set_format(format::Pixel::RGBA);
 
-        let ocl_buffer = build_ocl_buffer(engine, pro_que, buf.as_mut_slice().len())
-            .expect("OpenCL buffer build");
+        let ocl_buffer =
+            build_ocl_buffer(pro_que, buf.as_mut_slice().len()).expect("OpenCL buffer build");
 
-        let kernel = pro_que.create_kernel("rgba_to_uint8_rgba_buffer")
-                            .unwrap()
-                            .gws(image.dims())
-                            .arg_img(image)
-                            .arg_buf(&ocl_buffer);
+        let kernel = pro_que.kernel_builder("rgba_to_uint8_rgba_buffer")
+                            .global_work_size(image.dims())
+                            .arg(image)
+                            .arg(&ocl_buffer)
+                            .build()
+                            .unwrap();
 
-        kernel.enq().expect("kernel.enq()");
+        unsafe {
+            kernel.enq().expect("kernel.enq()");
+        }
 
         ocl_buffer.read(buf.as_mut_slice())
                   .enq()
@@ -883,7 +899,7 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &Engine,
 }
 
 /// Reads pixels into the buffer.
-fn read_pixels(_: &Engine, (w, h): (u32, u32), buf: &mut [u8]) {
+fn read_pixels(_: MainThreadMarker, (w, h): (u32, u32), buf: &mut [u8]) {
     unsafe {
         // Our buffer expects 1-byte alignment.
         gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
@@ -900,7 +916,7 @@ fn read_pixels(_: &Engine, (w, h): (u32, u32), buf: &mut [u8]) {
 }
 
 /// Retrieves the current OpenGL context.
-fn get_opengl_context(_: &Engine) -> *mut c_void {
+fn get_opengl_context(_: MainThreadMarker) -> *mut c_void {
     unsafe { (**ptr!(game)).m_hSDLGLContext }
 }
 

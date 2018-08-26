@@ -1,4 +1,4 @@
-use error_chain::ChainedError;
+use failure::{Error, ResultExt};
 use ffmpeg::channel_layout::{self, ChannelLayout};
 use ffmpeg::codec::{self, encoder};
 use ffmpeg::format::{self, context};
@@ -6,9 +6,12 @@ use ffmpeg::software::{self, resampling, scaling};
 use ffmpeg::util::frame;
 use ffmpeg::{self, color, Packet, Rational};
 use std::cmp;
+use std::result;
 use std::sync::{Mutex, Once, ONCE_INIT};
 
-use errors::*;
+use utils::format_error;
+
+type Result<T> = result::Result<T, Error>;
 
 lazy_static! {
     static ref VIDEO_ENCODER: Mutex<Option<codec::Video>> = Mutex::new(None);
@@ -85,21 +88,21 @@ impl Encoder {
         let audio_codec = audio_codec.unwrap();
 
         let mut context =
-            format::output(&parameters.filename).chain_err(|| {
-                                                               "could not create the output context"
-                                                           })?;
+            format::output(&parameters.filename).context({
+                                                             "could not create the output context"
+                                                         })?;
         let global = context.format()
                             .flags()
                             .contains(format::flag::GLOBAL_HEADER);
 
         let (video_encoder, video_stream_index) = {
             let mut stream = context.add_stream(video_codec)
-                                    .chain_err(|| "could not add the video stream")?;
+                                    .context("could not add the video stream")?;
 
             let mut encoder = stream.codec()
                                     .encoder()
                                     .video()
-                                    .chain_err(|| "could not retrieve the video encoder")?;
+                                    .context("could not retrieve the video encoder")?;
 
             if global {
                 encoder.set_flags(codec::flag::GLOBAL_HEADER);
@@ -136,32 +139,31 @@ impl Encoder {
                 encoder.set_color_range(color::Range::MPEG);
             }
 
-            let encoder_settings = parameters.video_encoder_settings
-                                             .split_whitespace()
-                                             .filter_map(|s| {
-                let mut split = s.splitn(2, '=');
+            let encoder_settings = parameters
+                .video_encoder_settings
+                .split_whitespace()
+                .filter_map(|s| {
+                    let mut split = s.splitn(2, '=');
 
-                if let (Some(key), Some(value)) = (split.next(), split.next()) {
-                    return Some((key, value));
-                }
+                    if let (Some(key), Some(value)) = (split.next(), split.next()) {
+                        return Some((key, value));
+                    }
 
-                None
-            })
-                                             .chain(
-                [
-                    ("crf", parameters.crf.as_str()),
-                    ("preset", parameters.preset.as_str()),
-                    ("threads", parameters.vpx_threads.as_str()),
-                ]
-                .iter()
-                .filter_map(|&(name, value)| {
-                    value.split_whitespace().next().map(|v| (name, v))
-                }),
-            )
-                                             .collect();
+                    None
+                }).chain(
+                    [
+                        ("crf", parameters.crf.as_str()),
+                        ("preset", parameters.preset.as_str()),
+                        ("threads", parameters.vpx_threads.as_str()),
+                    ]
+                        .iter()
+                        .filter_map(|&(name, value)| {
+                            value.split_whitespace().next().map(|v| (name, v))
+                        }),
+                ).collect();
 
             let encoder = encoder.open_as_with(video_codec, encoder_settings)
-                                 .chain_err(|| "could not open the video encoder")?;
+                                 .context("could not open the video encoder")?;
             stream.set_parameters(&encoder);
 
             stream.set_time_base(parameters.time_base);
@@ -172,12 +174,12 @@ impl Encoder {
 
         let (audio_encoder, audio_stream_index) = {
             let mut stream = context.add_stream(audio_codec)
-                                    .chain_err(|| "could not add the audio stream")?;
+                                    .context("could not add the audio stream")?;
 
             let mut encoder = stream.codec()
                                     .encoder()
                                     .audio()
-                                    .chain_err(|| "could not retrieve the audio encoder")?;
+                                    .context("could not retrieve the audio encoder")?;
 
             if global {
                 encoder.set_flags(codec::flag::GLOBAL_HEADER);
@@ -230,7 +232,7 @@ impl Encoder {
                                              .collect();
 
             let encoder = encoder.open_as_with(audio_codec, encoder_settings)
-                                 .chain_err(|| "could not open the audio encoder")?;
+                                 .context("could not open the audio encoder")?;
             stream.set_parameters(&encoder);
 
             stream.set_time_base((1, rate));
@@ -254,7 +256,7 @@ impl Encoder {
                                        .collect();
 
         context.write_header_with(muxer_settings)
-               .chain_err(|| "could not write the header")?;
+               .context("could not write the header")?;
 
         let video_stream_time_base = context.stream(video_stream_index).unwrap().time_base();
         let audio_stream_time_base = context.stream(audio_stream_index).unwrap().time_base();
@@ -273,13 +275,18 @@ impl Encoder {
             frame::Audio::new(HL_SAMPLE_FORMAT, audio_frame_size, HL_CHANNEL_LAYOUT);
         audio_input_frame.set_rate(HL_SAMPLE_RATE as u32);
 
-        let resampler = software::resampler((audio_input_frame.format(),
-                                            audio_input_frame.channel_layout(),
-                                            audio_input_frame.rate()),
-                                            (audio_output_frame.format(),
-                                            audio_output_frame.channel_layout(),
-                                            audio_output_frame.rate()))
-                        .chain_err(|| "could not get the resampling context")?;
+        let resampler = software::resampler(
+            (
+                audio_input_frame.format(),
+                audio_input_frame.channel_layout(),
+                audio_input_frame.rate(),
+            ),
+            (
+                audio_output_frame.format(),
+                audio_output_frame.channel_layout(),
+                audio_output_frame.rate(),
+            ),
+        ).context("could not get the resampling context")?;
 
         let packet = Packet::empty();
 
@@ -314,7 +321,7 @@ impl Encoder {
 
             if self.video_encoder
                    .encode(frame, &mut self.packet)
-                   .chain_err(|| "could not encode the video frame")?
+                   .context("could not encode the video frame")?
             {
                 self.packet
                     .rescale_ts(self.time_base, self.video_stream_time_base);
@@ -322,7 +329,7 @@ impl Encoder {
 
                 self.packet
                     .write_interleaved(&mut self.context)
-                    .chain_err(|| "could not write the video packet")?;
+                    .context("could not write the video packet")?;
             }
         }
 
@@ -335,7 +342,7 @@ impl Encoder {
 
         if self.audio_encoder
                .encode(&self.audio_output_frame, &mut self.packet)
-               .chain_err(|| "could not encode the audio frame")?
+               .context("could not encode the audio frame")?
         {
             self.packet
                 .rescale_ts((1, self.audio_output_frame.rate() as i32),
@@ -344,7 +351,7 @@ impl Encoder {
 
             self.packet
                 .write_interleaved(&mut self.context)
-                .chain_err(|| "could not write the audio packet")?;
+                .context("could not write the audio packet")?;
         }
 
         Ok(())
@@ -387,13 +394,13 @@ impl Encoder {
             if self.audio_position == self.audio_input_frame.samples() {
                 self.resampler
                     .run(&self.audio_input_frame, &mut self.audio_output_frame)
-                    .chain_err(|| "could not resample the sound")?;
+                    .context("could not resample the sound")?;
                 self.push_audio_frame()?;
 
                 while let Some(_) = self.resampler.delay() {
                     self.resampler
                         .flush(&mut self.audio_output_frame)
-                        .chain_err(|| "could not resample the sound")?;
+                        .context("could not resample the sound")?;
                     self.push_audio_frame()?;
                 }
 
@@ -407,7 +414,7 @@ impl Encoder {
     fn flush(&mut self) -> Result<()> {
         while self.video_encoder
                   .flush(&mut self.packet)
-                  .chain_err(|| "could not get the packet")?
+                  .context("could not get the packet")?
         {
             self.packet
                 .rescale_ts(self.time_base, self.video_stream_time_base);
@@ -415,7 +422,7 @@ impl Encoder {
 
             self.packet
                 .write_interleaved(&mut self.context)
-                .chain_err(|| "could not write the packet")?;
+                .context("could not write the packet")?;
         }
 
         // Fill the remaining audio buffer with silence and encode it.
@@ -427,13 +434,13 @@ impl Encoder {
 
             self.resampler
                 .run(&self.audio_input_frame, &mut self.audio_output_frame)
-                .chain_err(|| "could not resample the sound")?;
+                .context("could not resample the sound")?;
             self.push_audio_frame()?;
 
             while let Some(_) = self.resampler.delay() {
                 self.resampler
                     .flush(&mut self.audio_output_frame)
-                    .chain_err(|| "could not resample the sound")?;
+                    .context("could not resample the sound")?;
                 self.push_audio_frame()?;
             }
 
@@ -442,7 +449,7 @@ impl Encoder {
 
         while self.audio_encoder
                   .flush(&mut self.packet)
-                  .chain_err(|| "could not get the packet")?
+                  .context("could not get the packet")?
         {
             self.packet
                 .rescale_ts((1, self.audio_output_frame.rate() as i32),
@@ -451,7 +458,7 @@ impl Encoder {
 
             self.packet
                 .write_interleaved(&mut self.context)
-                .chain_err(|| "could not write the packet")?;
+                .context("could not write the packet")?;
         }
 
         Ok(())
@@ -462,10 +469,10 @@ impl Encoder {
         // stuff here fails.
         self.finished = true;
 
-        self.flush().chain_err(|| "unable to flush the encoder")?;
+        self.flush().context("unable to flush the encoder")?;
         self.context
             .write_trailer()
-            .chain_err(|| "could not write the trailer")?;
+            .context("could not write the trailer")?;
 
         Ok(())
     }
@@ -525,17 +532,17 @@ impl PixFmtConverterInner {
            output: format::Pixel)
            -> Result<Self> {
         Ok(Self {
-               context: software::converter((width, height), input, output)
-                   .chain_err(|| "could not initialize the color conversion context")?,
-               output_frame: frame::Video::new(output, width, height),
-           })
+            context: software::converter((width, height), input, output)
+                .context("could not initialize the color conversion context")?,
+            output_frame: frame::Video::new(output, width, height),
+        })
     }
 
     #[inline]
     fn convert(&mut self, frame: &frame::Video) -> Result<&mut frame::Video> {
         self.context
             .run(frame, &mut self.output_frame)
-            .chain_err(|| "could not convert the frame to the correct color format")?;
+            .context("could not convert the frame to the correct color format")?;
 
         Ok(&mut self.output_frame)
     }
@@ -551,9 +558,8 @@ pub fn initialize() {
     static INIT: Once = ONCE_INIT;
 
     INIT.call_once(|| {
-                       if let Err(ref e) = ffmpeg::init().chain_err(|| "error initializing ffmpeg")
-                       {
-                           panic!("{}", e.display_chain());
+                       if let Err(e) = ffmpeg::init().context("error initializing ffmpeg") {
+                           panic!("{}", format_error(&e.into()));
                        }
 
                        *VIDEO_ENCODER.lock().unwrap() =

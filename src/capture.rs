@@ -1,17 +1,20 @@
-use error_chain::ChainedError;
+use failure::{err_msg, Error, ResultExt};
 use ffmpeg::frame::Video as VideoFrame;
 use ffmpeg::{format, Rational};
 use std::ops::Deref;
+use std::result;
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::{Mutex, Once, RwLock, ONCE_INIT};
 use std::thread;
 
 use encode::{Encoder, EncoderParameters};
-use engine::Engine;
-use errors::*;
+use engine::{Engine, MainThreadMarker};
 use fps_converter::*;
 use hooks::hw;
 // use profiler::*;
+use utils::format_error;
+
+type Result<T> = result::Result<T, Error>;
 
 lazy_static! {
     static ref CAPTURING: RwLock<bool> = RwLock::new(false);
@@ -112,7 +115,7 @@ impl VideoBuffer {
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         self.data_is_in_frame = false;
         self.data
-            .resize((self.width * self.height * self.components as u32) as usize,
+            .resize((self.width * self.height * u32::from(self.components)) as usize,
                     0);
 
         self.data.as_mut_slice()
@@ -237,19 +240,17 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
             CaptureThreadEvent::CaptureStart(params) => {
                 drop_frames = false;
 
-                encoder = Encoder::start(&params).chain_err(|| {
+                encoder = Encoder::start(&params).context({
                               "could not start the encoder; check your terminal (Half-Life's \
                                standard output) for ffmpeg messages"
                           })
-                          .map_err(|ref e| {
-                                       *CAPTURING.write().unwrap() = false;
-                                       drop_frames = true;
+                          .map_err(|e| {
+                              *CAPTURING.write().unwrap() = false;
+                              drop_frames = true;
 
-                                       event_sender
-                                     .send(GameThreadEvent::Message(
-                                               format!("{}", e.display_chain())))
-                                     .unwrap();
-                                   })
+                              event_sender.send(GameThreadEvent::Message(format_error(&e.into())))
+                                          .unwrap();
+                          })
                           .ok();
 
                 if let Some(ref encoder) = encoder {
@@ -271,7 +272,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 }
 
                 if let Err(e) = encode(&mut encoder, buffer, times, &mut frame) {
-                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display_chain())))
+                    event_sender.send(GameThreadEvent::Message(format_error(&e)))
                                 .unwrap();
 
                     *CAPTURING.write().unwrap() = false;
@@ -293,7 +294,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 drop(buffer);
 
                 if let Err(e) = result {
-                    event_sender.send(GameThreadEvent::Message(format!("{}", e.display_chain())))
+                    event_sender.send(GameThreadEvent::Message(format_error(&e)))
                                 .unwrap();
 
                     *CAPTURING.write().unwrap() = false;
@@ -323,7 +324,7 @@ fn encode(encoder: &mut Option<Encoder>,
 
     // Encode the frame.
     encoder.take(frame, times)
-           .chain_err(|| "could not encode the frame")?;
+           .context("could not encode the frame")?;
 
     Ok(())
 }
@@ -332,7 +333,7 @@ fn encode(encoder: &mut Option<Encoder>,
 fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>) {
     if let Some(mut encoder) = encoder {
         if let Err(e) = encoder.finish() {
-            event_sender.send(GameThreadEvent::Message(format!("{}", e.display_chain())))
+            event_sender.send(GameThreadEvent::Message(format_error(&e)))
                         .unwrap();
         }
 
@@ -340,7 +341,7 @@ fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>
     }
 }
 
-pub fn initialize(_: &Engine) {
+pub fn initialize(_: MainThreadMarker) {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
                        let (tx, rx) = channel::<VideoBuffer>();
@@ -358,7 +359,7 @@ pub fn initialize(_: &Engine) {
 }
 
 #[inline]
-pub fn get_buffer(_: &Engine, (width, height): (u32, u32)) -> VideoBuffer {
+pub fn get_buffer(_: MainThreadMarker, (width, height): (u32, u32)) -> VideoBuffer {
     let mut buf = VIDEO_BUF_RECEIVER.lock()
                                     .unwrap()
                                     .as_ref()
@@ -372,7 +373,7 @@ pub fn get_buffer(_: &Engine, (width, height): (u32, u32)) -> VideoBuffer {
 }
 
 #[inline]
-pub fn get_audio_buffer(_: &Engine) -> AudioBuffer {
+pub fn get_audio_buffer(_: MainThreadMarker) -> AudioBuffer {
     AUDIO_BUF_RECEIVER.lock()
                       .unwrap()
                       .as_ref()
@@ -382,7 +383,7 @@ pub fn get_audio_buffer(_: &Engine) -> AudioBuffer {
 }
 
 #[inline]
-pub fn get_event(_: &Engine) -> Option<GameThreadEvent> {
+pub fn get_event(_: MainThreadMarker) -> Option<GameThreadEvent> {
     match GAME_THREAD_RECEIVER.lock()
                               .unwrap()
                               .as_ref()
@@ -396,7 +397,7 @@ pub fn get_event(_: &Engine) -> Option<GameThreadEvent> {
 }
 
 #[inline]
-pub fn get_event_block(_: &Engine) -> GameThreadEvent {
+pub fn get_event_block(_: MainThreadMarker) -> GameThreadEvent {
     GAME_THREAD_RECEIVER.lock()
                         .unwrap()
                         .as_ref()
@@ -406,7 +407,7 @@ pub fn get_event_block(_: &Engine) -> GameThreadEvent {
 }
 
 #[inline]
-pub fn capture(_: &Engine, buf: VideoBuffer, times: usize) {
+pub fn capture(_: MainThreadMarker, buf: VideoBuffer, times: usize) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
@@ -416,7 +417,7 @@ pub fn capture(_: &Engine, buf: VideoBuffer, times: usize) {
 }
 
 #[inline]
-pub fn capture_audio(_: &Engine, buf: AudioBuffer) {
+pub fn capture_audio(_: MainThreadMarker, buf: AudioBuffer) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
@@ -435,7 +436,7 @@ pub fn get_capture_parameters(engine: &Engine) -> &CaptureParameters {
     engine.data().capture_parameters.as_ref().unwrap()
 }
 
-pub fn stop(engine: &Engine) {
+pub fn stop(engine: &mut Engine) {
     if !is_capturing() {
         return;
     }
@@ -443,11 +444,11 @@ pub fn stop(engine: &Engine) {
     hw::capture_remaining_sound(engine);
 
     *CAPTURING.write().unwrap() = false;
-    if let Some(FPSConverters::Sampling(ref mut sampling_conv)) = engine.data().fps_converter {
+    if let Some(FPSConverters::Sampling(ref mut sampling_conv)) = engine.data_mut().fps_converter {
         sampling_conv.free();
     }
-    engine.data().fps_converter = None;
-    engine.data().encoder_pixel_format = None;
+    engine.data_mut().fps_converter = None;
+    engine.data_mut().encoder_pixel_format = None;
 
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
@@ -514,13 +515,17 @@ fn parse_fps(string: &str) -> Option<Rational> {
 /// Parses the given string into a valid exposure value.
 #[inline]
 fn parse_exposure(string: &str) -> Result<f64> {
-    string.parse()
-          .chain_err(|| "could not convert the string to a floating point value")
-          .and_then(|x| if x > 0f64 && x <= 1f64 {
-        Ok(x)
-    } else {
-        bail!("allowed exposure values range from 0 (non-inclusive) to 1 (inclusive)")
-    })
+    string.parse::<f64>()
+          .context("could not convert the string to a floating point value")
+          .map_err(|e| e.into())
+          .and_then(|x| {
+                        if x > 0f64 && x <= 1f64 {
+                            Ok(x)
+                        } else {
+                            bail!("allowed exposure values range \
+                                   from 0 (non-inclusive) to 1 (inclusive)")
+                        }
+                    })
 }
 
 /// Parses the given string into a pixel format.
@@ -529,27 +534,27 @@ fn parse_pixel_format(string: &str) -> Result<format::Pixel> {
     if string.is_empty() {
         Ok(format::Pixel::None)
     } else {
-        string.parse()
-              .chain_err(|| "could not convert the string to a pixel format")
+        Ok(string.parse::<format::Pixel>()
+                 .context("could not convert the string to a pixel format")?)
     }
 }
 
 macro_rules! to_string {
     ($engine:expr, $cvar:expr) => {
         $cvar.to_string($engine)
-             .chain_err(|| concat!("invalid ", stringify!($cvar)))?
+             .context(concat!("invalid ", stringify!($cvar)))?
     };
 }
 
 macro_rules! parse {
     ($engine:expr, $cvar:expr) => {
         $cvar.parse($engine)
-             .chain_err(|| concat!("invalid ", stringify!($cvar)))?
+             .context(concat!("invalid ", stringify!($cvar)))?
     };
 
     ($engine:expr, $cvar:expr, $type:ty) => {
         $cvar.parse::<$type>($engine)
-             .chain_err(|| concat!("invalid ", stringify!($cvar)))?
+             .context(concat!("invalid ", stringify!($cvar)))?
     };
 }
 
@@ -557,45 +562,44 @@ macro_rules! parse {
 #[inline]
 fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
     Ok(EncoderParameters {
-           audio_bitrate: parse!(engine, cap_audio_bitrate, usize) * 1000,
-           video_bitrate: parse!(engine, cap_video_bitrate, usize) * 1000,
-           crf: to_string!(engine, cap_crf),
-           filename: to_string!(engine, cap_filename),
-           muxer_settings: to_string!(engine, cap_muxer_settings),
-           pixel_format: parse_pixel_format(&to_string!(engine, cap_pixel_format))
-               .chain_err(|| "invalid cap_pixel_format")?,
-           preset: to_string!(engine, cap_x264_preset),
-           time_base: parse_fps(&to_string!(engine, cap_fps))
-               .ok_or("invalid cap_fps")?,
-           audio_encoder_settings: to_string!(engine, cap_audio_encoder_settings),
-           video_encoder_settings: to_string!(engine, cap_video_encoder_settings),
-           vpx_threads: to_string!(engine, cap_vpx_threads),
-           video_resolution: hw::get_resolution(engine),
-       })
+        audio_bitrate: parse!(engine, cap_audio_bitrate, usize) * 1000,
+        video_bitrate: parse!(engine, cap_video_bitrate, usize) * 1000,
+        crf: to_string!(engine, cap_crf),
+        filename: to_string!(engine, cap_filename),
+        muxer_settings: to_string!(engine, cap_muxer_settings),
+        pixel_format: parse_pixel_format(&to_string!(engine, cap_pixel_format))
+            .context("invalid cap_pixel_format")?,
+        preset: to_string!(engine, cap_x264_preset),
+        time_base: parse_fps(&to_string!(engine, cap_fps))
+            .ok_or_else(|| err_msg("invalid cap_fps"))?,
+        audio_encoder_settings: to_string!(engine, cap_audio_encoder_settings),
+        video_encoder_settings: to_string!(engine, cap_video_encoder_settings),
+        vpx_threads: to_string!(engine, cap_vpx_threads),
+        video_resolution: hw::get_resolution(engine.marker().1),
+    })
 }
 
 /// Parses the CVar values into `CaptureParameters`.
 #[inline]
 fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
     Ok(CaptureParameters {
-           sampling_exposure: parse_exposure(&to_string!(engine, cap_sampling_exposure))
-               .chain_err(|| "invalid cap_sampling_exposure")?,
-           sampling_time_base: parse_fps(&to_string!(engine, cap_sampling_sps)),
-           sound_extra: parse!(engine, cap_sound_extra),
-           time_base: parse_fps(&to_string!(engine, cap_fps))
-               .ok_or("invalid cap_fps")?,
-           volume: parse!(engine, cap_volume),
-       })
+        sampling_exposure: parse_exposure(&to_string!(engine, cap_sampling_exposure))
+            .context("invalid cap_sampling_exposure")?,
+        sampling_time_base: parse_fps(&to_string!(engine, cap_sampling_sps)),
+        sound_extra: parse!(engine, cap_sound_extra),
+        time_base: parse_fps(&to_string!(engine, cap_fps))
+            .ok_or_else(|| err_msg("invalid cap_fps"))?,
+        volume: parse!(engine, cap_volume),
+    })
 }
 
 /// Starts and stops the encoder.
 fn test_encoder(parameters: &EncoderParameters) -> Result<()> {
-    let mut encoder = Encoder::start(parameters).chain_err(|| {
-                          "could not start the encoder; check your terminal (Half-Life's \
-                           standard output) for ffmpeg messages"
-                      })?;
-    encoder.finish()
-           .chain_err(|| "could not finish the encoder")?;
+    let mut encoder = Encoder::start(parameters).context({
+                                   "could not start the encoder; check your terminal (Half-Life's \
+                                    standard output) for ffmpeg messages"
+                               })?;
+    encoder.finish().context("could not finish the encoder")?;
     Ok(())
 }
 
@@ -609,27 +613,27 @@ command!(cap_start, |mut engine| {
     let parameters = match parse_encoder_parameters(&mut engine) {
         Ok(p) => p,
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display_chain()));
+            engine.con_print(&format_error(e));
             return;
         }
     };
 
-    engine.data().capture_parameters = match parse_capture_parameters(&mut engine) {
+    engine.data_mut().capture_parameters = match parse_capture_parameters(&mut engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display_chain()));
+            engine.con_print(&format_error(e));
             return;
         }
     };
 
-    engine.data().fps_converter = if engine.data()
-                                           .capture_parameters
-                                           .as_ref()
-                                           .unwrap()
-                                           .sampling_time_base
-                                           .is_some()
+    engine.data_mut().fps_converter = if engine.data()
+                                               .capture_parameters
+                                               .as_ref()
+                                               .unwrap()
+                                               .sampling_time_base
+                                               .is_some()
     {
-        Some(FPSConverters::Sampling(SamplingConverter::new(&engine,
+        Some(FPSConverters::Sampling(SamplingConverter::new(&mut engine,
                                                             parameters.time_base.into(),
                                                             parameters.video_resolution)))
     } else {
@@ -648,18 +652,18 @@ command!(cap_start, |mut engine| {
     // GAME_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
     // AUDIO_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
 
-    hw::reset_sound_capture_remainder(&engine);
+    hw::reset_sound_capture_remainder(&mut engine);
 });
 
-command!(cap_stop, |engine| {
-    stop(&engine);
+command!(cap_stop, |mut engine| {
+    stop(&mut engine);
 });
 
 command!(cap_test, |mut engine| {
     let parameters = match parse_encoder_parameters(&mut engine) {
         Ok(p) => p,
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display_chain()));
+            engine.con_print(&format_error(e));
             return;
         }
     };
@@ -667,13 +671,13 @@ command!(cap_test, |mut engine| {
     let _capture_parameters = match parse_capture_parameters(&mut engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
-            engine.con_print(&format!("{}", e.display_chain()));
+            engine.con_print(&format_error(e));
             return;
         }
     };
 
     if let Err(ref e) = test_encoder(&parameters) {
-        engine.con_print(&format!("{}", e.display_chain()));
+        engine.con_print(&format_error(e));
     } else {
         engine.con_print("Capture was started and stopped successfully.\n");
     }

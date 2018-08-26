@@ -1,8 +1,5 @@
-// For error_chain.
-#![recursion_limit = "1024"]
-
 #[macro_use]
-extern crate error_chain;
+extern crate failure;
 extern crate ffmpeg;
 extern crate fine_grained;
 extern crate gl;
@@ -13,10 +10,6 @@ extern crate libc;
 extern crate ocl;
 extern crate sdl2_sys;
 
-mod errors {
-    // Create the Error, ErrorKind, ResultExt, and Result types.
-    error_chain!{}
-}
 #[macro_use]
 mod macros;
 mod capture;
@@ -32,6 +25,7 @@ mod hooks {
 mod manual_free;
 // mod profiler;
 mod sdl;
+mod utils;
 
 #[link(name = "GL", kind = "dylib")]
 extern "C" {}

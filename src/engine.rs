@@ -1,10 +1,13 @@
+use failure::Error;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::result;
 
 use command;
 use cvar::{cvar_t, CVar};
-use errors::*;
 use hooks::hw;
+
+type Result<T> = result::Result<T, Error>;
 
 static mut MAIN_THREAD_DATA: MainThreadDataContainer =
     MainThreadDataContainer { data: MainThreadData { capture_parameters: None,
@@ -62,6 +65,14 @@ pub struct EngineCVarGuard<'a> {
     _borrow_guard: &'a mut Engine,
 }
 
+/// A static guarantee of being in the main game thread, separate from `Engine` to allow borrowing.
+#[derive(Clone, Copy)]
+pub struct MainThreadMarker<'engine> {
+    // Same purpose as in Engine.
+    _private: PhantomData<*const ()>,
+    _private_2: PhantomData<&'engine ()>,
+}
+
 impl Engine {
     /// Creates an instance of Engine.
     ///
@@ -72,9 +83,27 @@ impl Engine {
         Engine { _private: PhantomData, }
     }
 
+    /// Splits off a `MainThreadMarker`.
+    #[inline]
+    pub fn marker(&self) -> (&Self, MainThreadMarker) {
+        (self, unsafe { MainThreadMarker::new() })
+    }
+
+    /// Splits off a `MainThreadMarker` from a mutable reference.
+    #[inline]
+    pub fn marker_mut(&mut self) -> (&mut Self, MainThreadMarker) {
+        (self, unsafe { MainThreadMarker::new() })
+    }
+
+    /// Returns a reference to the main thread global variables.
+    #[inline]
+    pub fn data(&self) -> &MainThreadData {
+        unsafe { &MAIN_THREAD_DATA.data }
+    }
+
     /// Returns a mutable reference to the main thread global variables.
     #[inline]
-    pub fn data(&self) -> &mut MainThreadData {
+    pub fn data_mut(&mut self) -> &mut MainThreadData {
         unsafe { &mut MAIN_THREAD_DATA.data }
     }
 
@@ -141,5 +170,13 @@ impl<'a> DerefMut for EngineCVarGuard<'a> {
     #[inline]
     fn deref_mut(&mut self) -> &mut cvar_t {
         self.engine_cvar
+    }
+}
+
+impl<'engine> MainThreadMarker<'engine> {
+    #[inline]
+    unsafe fn new() -> Self {
+        Self { _private: PhantomData,
+               _private_2: PhantomData, }
     }
 }

@@ -1,9 +1,12 @@
+use failure::{Error, Fail, ResultExt};
 use libc::*;
 use std::ffi::{CStr, CString};
+use std::result;
 use std::str::FromStr;
 
 use engine::Engine;
-use errors::*;
+
+type Result<T> = result::Result<T, Error>;
 
 include!(concat!(env!("OUT_DIR"), "/cvar_array.rs"));
 
@@ -66,8 +69,8 @@ impl CVar {
             let mut engine_cvar = engine.get_engine_cvar(self);
 
             if engine_cvar.name.is_null() {
-                let name_cstring = CString::new(self.name)
-                    .chain_err(|| "could not convert the CVar name to CString")?;
+                let name_cstring =
+                    CString::new(self.name).context("could not convert the CVar name to CString")?;
 
                 // HACK: leak this CString. It's staying around till the end anyway.
                 engine_cvar.name = name_cstring.into_raw();
@@ -75,7 +78,7 @@ impl CVar {
 
             // This CString needs to be valid only for the duration of Cvar_RegisterVariable().
             let default_value_cstring = CString::new(self.default_value)
-                .chain_err(|| "could not convert default CVar value to CString")?;
+                .context("could not convert default CVar value to CString")?;
 
             let ptr = default_value_cstring.into_raw();
             engine_cvar.string = ptr;
@@ -83,7 +86,7 @@ impl CVar {
         };
 
         engine.register_variable(self)
-              .chain_err(|| "could not register the variable")?;
+              .context("could not register the variable")?;
 
         // Free that CString from above.
         unsafe { CString::from_raw(ptr) };
@@ -99,18 +102,18 @@ impl CVar {
 
         let string = unsafe { CStr::from_ptr(engine_cvar.string) }
             .to_str()
-            .chain_err(|| "could not convert the CVar string to a Rust string")?;
+            .context("could not convert the CVar string to a Rust string")?;
         Ok(string.to_owned())
     }
 
     /// Tries parsing this variable's value to the desired type.
     pub fn parse<T>(&self, engine: &mut Engine) -> Result<T>
         where T: FromStr,
-              <T as FromStr>::Err: ::std::error::Error + Send + 'static
+              <T as FromStr>::Err: Fail
     {
         let string = self.to_string(engine)
-                         .chain_err(|| "could not get this CVar's string value")?;
-        string.parse()
-              .chain_err(|| "could not convert the CVar string to the desired type")
+                         .context("could not get this CVar's string value")?;
+        Ok(string.parse::<T>()
+                 .context("could not convert the CVar string to the desired type")?)
     }
 }

@@ -25,8 +25,8 @@ impl SimpleConverter {
 }
 
 impl FPSConverter for SimpleConverter {
-    fn time_passed<F>(&mut self, engine: &Engine, frametime: f64, capture: F)
-        where F: FnOnce(&Engine) -> FrameCapture
+    fn time_passed<F>(&mut self, engine: &mut Engine, frametime: f64, capture: F)
+        where F: FnOnce(&mut Engine) -> FrameCapture
     {
         assert!(frametime >= 0.0f64);
 
@@ -40,13 +40,13 @@ impl FPSConverter for SimpleConverter {
         if frames > 0 {
             let frame_capture = capture(engine);
 
-            let (w, h) = hw::get_resolution(engine);
-            let mut buf = capture::get_buffer(engine, (w, h));
+            let (w, h) = hw::get_resolution(engine.marker().1);
+            let mut buf = capture::get_buffer(engine.marker().1, (w, h));
 
             match frame_capture {
                 FrameCapture::OpenGL(read_pixels) => {
                     buf.set_format(format::Pixel::RGB24);
-                    read_pixels(engine, (w, h), buf.as_mut_slice());
+                    read_pixels(engine.marker().1, (w, h), buf.as_mut_slice());
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
@@ -54,7 +54,7 @@ impl FPSConverter for SimpleConverter {
                 }
             }
 
-            capture::capture(engine, buf, frames);
+            capture::capture(engine.marker().1, buf, frames);
         }
     }
 }
