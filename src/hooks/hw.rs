@@ -137,17 +137,7 @@ impl AsRef<ocl::Image<u8>> for OclGlTexture {
 
 impl Drop for OclGlTexture {
     fn drop(&mut self) {
-        let mut event = ocl::Event::empty();
-
-        self.image
-            .cmd()
-            .gl_release()
-            .enew(&mut event)
-            .enq()
-            .expect("gl_release()");
-
-        event.wait_for()
-             .expect("waiting for the gl_release() event");
+        self.image.cmd().gl_release().enq().expect("gl_release()");
     }
 }
 
