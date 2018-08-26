@@ -14,7 +14,7 @@ hl-capture is designed to be **fast** and **convenient**. Video and sound are en
 - TAS compatibility out of the box, including engine restarts.
 
 ## Requirements
-- 32-bit FFMpeg libraries (you can download pre-built static 32-bit FFMpeg libraries with the main codecs [here](https://mega.nz/#!1JRAyD7Z!w0cWQIznCRGQz8ovXO4hKKDBFvgU4BbYrDVosOEoZHU)).
+- 32-bit FFMpeg libraries. FFMpeg **3.4** is known to work; FFMpeg 4 will not work. You can download pre-built working static 32-bit FFMpeg libraries with the main codecs [here](https://mega.nz/#!1JRAyD7Z!w0cWQIznCRGQz8ovXO4hKKDBFvgU4BbYrDVosOEoZHU).
 - 32-bit OpenCL (look for something like ocl-icd).
 
 ## Usage
