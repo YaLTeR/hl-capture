@@ -4,7 +4,6 @@ use ocl::{self, OclPrm};
 use super::*;
 use capture;
 use hooks::hw::FrameCapture;
-use manual_free::ManualFree;
 
 /// Resampling FPS converter which averages input frames for smooth motion.
 pub struct SamplingConverter {
@@ -16,7 +15,7 @@ pub struct SamplingConverter {
     time_base: f64,
 
     /// Data with a destructor, wrapped so `SamplingConverter` can be put in a static variable.
-    private: ManualFree<SamplingConverterPrivate>,
+    private: SamplingConverterPrivate,
 }
 
 /// Data with a destructor.
@@ -58,18 +57,13 @@ impl SamplingConverter {
 
         Self { remainder: 0f64,
                time_base,
-               private: ManualFree::new(SamplingConverterPrivate::new(engine, video_resolution)), }
+               private: SamplingConverterPrivate::new(engine, video_resolution), }
     }
 
     /// This should be called before an engine restart.
     #[inline]
     pub fn backup_and_free_ocl_data(&mut self, engine: &mut Engine) {
         self.private.backup_and_free_ocl_data(engine);
-    }
-
-    #[inline]
-    pub fn free(&mut self) {
-        self.private.free();
     }
 }
 

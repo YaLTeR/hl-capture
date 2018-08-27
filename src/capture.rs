@@ -444,9 +444,6 @@ pub fn stop(engine: &mut Engine) {
     hw::capture_remaining_sound(engine);
 
     *CAPTURING.write().unwrap() = false;
-    if let Some(FPSConverters::Sampling(ref mut sampling_conv)) = engine.data_mut().fps_converter {
-        sampling_conv.free();
-    }
     engine.data_mut().fps_converter = None;
     engine.data_mut().encoder_pixel_format = None;
 

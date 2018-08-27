@@ -22,7 +22,6 @@ mod fps_converter;
 mod hooks {
     pub mod hw;
 }
-mod manual_free;
 // mod profiler;
 mod sdl;
 mod utils;
