@@ -295,30 +295,27 @@ impl SamplingConverterPrivate {
 
 impl OclRuntimeData {
     fn new(engine: &mut Engine, (w, h): (u32, u32)) -> Option<Self> {
-        let mut rv = hw::get_pro_que(engine).map(|pro_que| Self { ocl_buffers: [
-            hw::build_ocl_image(
-                pro_que,
-                ocl::MemFlags::new().read_write().host_no_access(),
-                ocl::enums::ImageChannelDataType::Float,
-                (w, h).into(),
-            ).expect("building an OpenCL image"),
-            hw::build_ocl_image(
-                pro_que,
-                ocl::MemFlags::new().read_write().host_no_access(),
-                ocl::enums::ImageChannelDataType::Float,
-                (w, h).into(),
-            ).expect("building an OpenCL image"),
-        ],
-                                                                  ocl_output_image:
-                                                                      hw::build_ocl_image(
-                pro_que,
-                ocl::MemFlags::new().read_write().host_read_only(),
-                ocl::enums::ImageChannelDataType::Float,
-                (w, h).into(),
-            ).expect(
-                "building an OpenCL image",
-            ),
-                                                                  ocl_current_buffer_index: 0, });
+        let mut rv = if let Some(pro_que) = hw::get_pro_que(engine) {
+            Some(Self { ocl_buffers:
+                            [hw::build_ocl_image(pro_que,
+                                                 ocl::MemFlags::new().read_write()
+                                                                     .host_no_access(),
+                                                 ocl::enums::ImageChannelDataType::Float,
+                                                 (w, h).into()).expect("building an OpenCL image"),
+                             hw::build_ocl_image(pro_que,
+                                                 ocl::MemFlags::new().read_write()
+                                                                     .host_no_access(),
+                                                 ocl::enums::ImageChannelDataType::Float,
+                                                 (w, h).into()).expect("building an OpenCL image")],
+                        ocl_output_image:
+                            hw::build_ocl_image(pro_que,
+                                                ocl::MemFlags::new().read_write().host_read_only(),
+                                                ocl::enums::ImageChannelDataType::Float,
+                                                (w, h).into()).expect("building an OpenCL image"),
+                        ocl_current_buffer_index: 0, })
+        } else {
+            None
+        };
 
         if let Some(ref mut rv) = rv {
             ocl_fill_with_black(engine, rv.src_buffer());
