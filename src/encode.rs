@@ -139,28 +139,30 @@ impl Encoder {
                 encoder.set_color_range(color::Range::MPEG);
             }
 
-            let encoder_settings = parameters
-                .video_encoder_settings
-                .split_whitespace()
-                .filter_map(|s| {
-                    let mut split = s.splitn(2, '=');
+            let extra_settings = [("crf", &parameters.crf),
+                                  ("preset", &parameters.preset),
+                                  ("threads", &parameters.vpx_threads)];
+            let extra_settings = extra_settings.iter().filter_map(|&(name, value)| {
+                                                                      value.split_whitespace()
+                                                                           .next()
+                                                                           .map(|v| (name, v))
+                                                                  });
 
-                    if let (Some(key), Some(value)) = (split.next(), split.next()) {
-                        return Some((key, value));
-                    }
+            let encoder_settings = parameters.video_encoder_settings
+                                             .split_whitespace()
+                                             .filter_map(|s| {
+                                                             let mut split = s.splitn(2, '=');
 
-                    None
-                }).chain(
-                    [
-                        ("crf", parameters.crf.as_str()),
-                        ("preset", parameters.preset.as_str()),
-                        ("threads", parameters.vpx_threads.as_str()),
-                    ]
-                        .iter()
-                        .filter_map(|&(name, value)| {
-                            value.split_whitespace().next().map(|v| (name, v))
-                        }),
-                ).collect();
+                                                             if let (Some(key), Some(value)) =
+                                                                 (split.next(), split.next())
+                                                             {
+                                                                 return Some((key, value));
+                                                             }
+
+                                                             None
+                                                         })
+                                             .chain(extra_settings)
+                                             .collect();
 
             let encoder = encoder.open_as_with(video_codec, encoder_settings)
                                  .context("could not open the video encoder")?;
