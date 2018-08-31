@@ -4,6 +4,7 @@ use ocl::{self, OclPrm};
 use super::*;
 use capture;
 use hooks::hw::FrameCapture;
+use utils::MaybeUnavailable;
 
 /// Resampling FPS converter which averages input frames for smooth motion.
 pub struct SamplingConverter {
@@ -23,7 +24,7 @@ struct SamplingConverterPrivate {
     /// Data used for OpenCL operations.
     ///
     /// This is Some(None) if OpenCL is unavailable and None during an engine restart.
-    ocl_runtime_data: Option<Option<OclRuntimeData>>,
+    ocl_runtime_data: MaybeUnavailable<OclRuntimeData>,
 
     /// Pixels from the buffer are stored here when the engine restarts.
     ocl_backup_buffer: Option<Vec<ocl::prm::Float>>,
@@ -212,7 +213,9 @@ impl FPSConverter for SamplingConverter {
 impl SamplingConverterPrivate {
     #[inline]
     fn new(engine: &mut Engine, video_resolution: (u32, u32)) -> Self {
-        Self { ocl_runtime_data: Some(OclRuntimeData::new(engine, video_resolution)),
+        Self { ocl_runtime_data:
+                   MaybeUnavailable::from_check_result(OclRuntimeData::new(engine,
+                                                                           video_resolution)),
                ocl_backup_buffer: None,
                video_resolution,
                gl_sampling_buffer: Vec::new(),
@@ -221,16 +224,16 @@ impl SamplingConverterPrivate {
 
     #[inline]
     fn get_ocl_data(&mut self, engine: &mut Engine) -> Option<&mut OclRuntimeData> {
-        if self.ocl_runtime_data.is_none() {
+        if self.ocl_runtime_data.is_not_checked() {
             self.restore_ocl_data(engine);
         }
 
-        self.ocl_runtime_data.as_mut().unwrap().as_mut()
+        self.ocl_runtime_data.as_mut().available()
     }
 
     /// This should be called before an engine restart.
     fn backup_and_free_ocl_data(&mut self, engine: &mut Engine) {
-        let set_to_none = if let Some(Some(ref ocl_data)) = self.ocl_runtime_data {
+        let reset = if let MaybeUnavailable::Available(ref ocl_data) = self.ocl_runtime_data {
             // Copy the src buffer into the output image.
             ocl_weighted_image_add(engine,
                                    ocl_data.dst_buffer(),
@@ -252,14 +255,14 @@ impl SamplingConverterPrivate {
             false
         };
 
-        if set_to_none {
-            self.ocl_runtime_data = None;
+        if reset {
+            self.ocl_runtime_data.reset();
         }
     }
 
     /// This should be called after an engine restart.
     fn restore_ocl_data(&mut self, engine: &mut Engine) {
-        if self.ocl_runtime_data.is_some() {
+        if !self.ocl_runtime_data.is_not_checked() {
             panic!("tried to restore already existing OpenCL data");
         }
 
@@ -286,7 +289,7 @@ impl SamplingConverterPrivate {
                                ocl_data.src_buffer(),
                                0f32);
 
-        self.ocl_runtime_data = Some(Some(ocl_data));
+        self.ocl_runtime_data = MaybeUnavailable::Available(ocl_data);
     }
 }
 
