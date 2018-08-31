@@ -1,4 +1,5 @@
 use failure::Error;
+use ocl;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::result;
@@ -6,6 +7,7 @@ use std::result;
 use command;
 use cvar::{cvar_t, CVar};
 use hooks::hw;
+use utils::MaybeUnavailable;
 
 type Result<T> = result::Result<T, Error>;
 
@@ -19,8 +21,9 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer =
                                                      inside_gl_setmode: false,
                                                      fps_converter: None,
                                                      encoder_pixel_format: None,
-                                                     pro_que: None,
-                                                     ocl_yuv_buffers: None, }, };
+                                                     pro_que: MaybeUnavailable::NotChecked,
+                                                     ocl_yuv_buffers:
+                                                         MaybeUnavailable::NotChecked, }, };
 
 /// Global variables accessible from the main game thread.
 pub struct MainThreadData {
@@ -32,9 +35,8 @@ pub struct MainThreadData {
     pub inside_gl_setmode: bool,
     pub fps_converter: Option<::fps_converter::FPSConverters>,
     pub encoder_pixel_format: Option<::ffmpeg::format::Pixel>,
-    pub pro_que: Option<Option<*mut ::ocl::ProQue>>,
-    pub ocl_yuv_buffers:
-        Option<Option<*mut (::ocl::Buffer<u8>, ::ocl::Buffer<u8>, ::ocl::Buffer<u8>)>>,
+    pub pro_que: MaybeUnavailable<ocl::ProQue>,
+    pub ocl_yuv_buffers: MaybeUnavailable<(ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)>,
 }
 
 /// A Send+Sync container to allow putting `MainThreadData` into a global variable.

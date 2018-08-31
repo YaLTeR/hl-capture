@@ -24,6 +24,7 @@ use encode;
 use engine::{Engine, MainThreadMarker};
 use fps_converter::*;
 use sdl;
+use utils::MaybeUnavailable;
 
 use utils::format_error;
 
@@ -233,13 +234,8 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
         engine.data_mut().fps_converter = Some(FPSConverters::Sampling(sampling_conv));
     }
 
-    if let Some(Some(buffers)) = engine.data_mut().ocl_yuv_buffers.take() {
-        drop(Box::from_raw(buffers));
-    }
-
-    if let Some(Some(pro_que)) = engine.data_mut().pro_que.take() {
-        drop(Box::from_raw(pro_que));
-    }
+    engine.data_mut().ocl_yuv_buffers.reset();
+    engine.data_mut().pro_que.reset();
 
     // Since hw.so is getting unloaded, reset all pointers.
     reset_pointers(engine.marker().1);
@@ -653,7 +649,7 @@ pub fn capture_remaining_sound(engine: &mut Engine) {
 
 /// Returns the ocl `ProCue`.
 pub fn get_pro_que(engine: &mut Engine) -> Option<&mut ocl::ProQue> {
-    if engine.data().pro_que.is_none() {
+    if engine.data().pro_que.is_not_checked() {
         let context = ocl::Context::builder().gl_context(get_opengl_context(engine.marker().1))
                                              .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
                                              .build()
@@ -672,7 +668,6 @@ pub fn get_pro_que(engine: &mut Engine) -> Option<&mut ocl::ProQue> {
                                                        .build()
                                                        .context("error building ocl::ProQue")
                              })
-                             .map(|pro_que| Box::into_raw(Box::new(pro_que)))
                              .map_err(|e| {
                                           engine.con_print(&format!("Could not initialize OpenCL, \
                                                             proceeding without it. \
@@ -681,15 +676,10 @@ pub fn get_pro_que(engine: &mut Engine) -> Option<&mut ocl::ProQue> {
                                       })
                              .ok();
 
-        engine.data_mut().pro_que = Some(pro_que);
+        engine.data_mut().pro_que = MaybeUnavailable::from_check_result(pro_que);
     }
 
-    engine.data_mut()
-          .pro_que
-          .as_mut()
-          .unwrap()
-          .as_mut()
-          .map(|ptr| unsafe { ptr.as_mut() }.unwrap())
+    engine.data_mut().pro_que.as_mut().available()
 }
 
 /// Builds an ocl `Buffer` with the specified length.
@@ -720,70 +710,54 @@ pub fn build_ocl_image<T: ocl::OclPrm>(pro_que: &ocl::ProQue,
 /// Builds ocl YUV buffers with the specified length.
 fn build_yuv_buffers(pro_que: &ocl::ProQue,
                      (Y_len, U_len, V_len): (usize, usize, usize))
-                     -> Option<*mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
+                     -> Option<(ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
     let Y_buf = build_ocl_buffer(pro_que, Y_len);
     let U_buf = build_ocl_buffer(pro_que, U_len);
     let V_buf = build_ocl_buffer(pro_que, V_len);
 
     if let (Ok(Y_buf), Ok(U_buf), Ok(V_buf)) = (Y_buf, U_buf, V_buf) {
-        Some(Box::into_raw(Box::new((Y_buf, U_buf, V_buf))))
+        Some((Y_buf, U_buf, V_buf))
     } else {
         None
     }
 }
 
-/// Returns the ocl buffers for Y, U and V.
-fn get_yuv_buffers<'a>(engine: &mut Engine,
-                       (Y_len, U_len, V_len): (usize, usize, usize))
-                       -> Option<&'a mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
-    if engine.data().ocl_yuv_buffers.is_none() {
+/// Returns the ocl buffers for Y, U and V, (HACK:) as well as a `ProQue`.
+fn get_yuv_buffers_and_pro_que(
+    engine: &mut Engine,
+    (Y_len, U_len, V_len): (usize, usize, usize))
+    -> Option<(&mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>), &ocl::ProQue)> {
+    if engine.data().ocl_yuv_buffers.is_not_checked() {
         let buffers = build_yuv_buffers(get_pro_que(engine).unwrap(), (Y_len, U_len, V_len));
-        engine.data_mut().ocl_yuv_buffers = Some(buffers);
+        engine.data_mut().ocl_yuv_buffers = MaybeUnavailable::from_check_result(buffers);
     }
 
     // Verify the buffer sizes.
-    match engine.data_mut()
-                .ocl_yuv_buffers
-                .as_mut()
-                .unwrap()
-                .as_mut()
-                .map(|ptr| unsafe { ptr.as_mut() }.unwrap())
-    {
-        Some(&mut (ref Y_buf, ref U_buf, ref V_buf)) => {
+    match engine.data_mut().ocl_yuv_buffers.take() {
+        Some((Y_buf, U_buf, V_buf)) => {
             // Check if the requested buffer size is different.
             // In most cases if one of the buffer sizes changes, the other do as well.
             if Y_buf.len() != Y_len || U_buf.len() != U_len || V_buf.len() != V_len {
-                // Drop the references first.
-                // This does nothing.
-                // drop(Y_buf);
-                // drop(U_buf);
-                // drop(V_buf);
+                // First drop the existing buffers.
+                drop(Y_buf);
+                drop(U_buf);
+                drop(V_buf);
 
-                // Now drop the buffers themselves.
-                drop(unsafe {
-                         Box::from_raw(engine.data_mut().ocl_yuv_buffers.take().unwrap().unwrap())
-                     });
-
-                // And allocate new ones.
+                // Now allocate new ones.
                 let buffers =
                     build_yuv_buffers(get_pro_que(engine).unwrap(), (Y_len, U_len, V_len));
-                engine.data_mut().ocl_yuv_buffers = Some(buffers);
-
-                buffers.map(|ptr| unsafe { ptr.as_mut() }.unwrap())
+                engine.data_mut().ocl_yuv_buffers = MaybeUnavailable::from_check_result(buffers);
             } else {
-                // Drop the existing references.
-                // This does nothing.
-                // drop(Y_buf);
-                // drop(U_buf);
-                // drop(V_buf);
-
-                engine.data_mut()
-                      .ocl_yuv_buffers
-                      .as_mut()
-                      .unwrap()
-                      .as_mut()
-                      .map(|ptr| unsafe { ptr.as_mut() }.unwrap())
+                engine.data_mut().ocl_yuv_buffers =
+                    MaybeUnavailable::Available((Y_buf, U_buf, V_buf));
             }
+
+            let data = engine.data_mut();
+            let pro_que = &data.pro_que;
+            data.ocl_yuv_buffers
+                .as_mut()
+                .available()
+                .map(|buffers| (buffers, pro_que.as_ref().unwrap()))
         }
         None => None,
     }
@@ -827,65 +801,61 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &mut Engine,
                                                buf: &mut capture::VideoBuffer) {
     let encoder_pixel_format = engine.data().encoder_pixel_format.unwrap();
 
-    let func_name = ocl_color_conversion_func_name(encoder_pixel_format);
-
-    let yuv_buffers = if func_name.is_some() {
+    if let Some(func_name) = ocl_color_conversion_func_name(encoder_pixel_format) {
         buf.set_format(encoder_pixel_format);
         let frame = buf.get_frame();
 
-        get_yuv_buffers(engine,
-                        (frame.data(0).len(), frame.data(1).len(), frame.data(2).len()))
-    } else {
-        None
-    };
+        if let Some((&mut (ref Y_buf, ref U_buf, ref V_buf), pro_que)) =
+            get_yuv_buffers_and_pro_que(engine,
+                                        (frame.data(0).len(),
+                                        frame.data(1).len(),
+                                        frame.data(2).len()))
+        {
+            let kernel = pro_que.kernel_builder(func_name)
+                                .global_work_size(image.dims())
+                                .arg(image)
+                                .arg(frame.stride(0))
+                                .arg(frame.stride(1))
+                                .arg(frame.stride(2))
+                                .arg(Y_buf)
+                                .arg(U_buf)
+                                .arg(V_buf)
+                                .build()
+                                .unwrap();
+
+            unsafe {
+                kernel.enq().expect("kernel.enq()");
+            }
+
+            Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
+            U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
+            V_buf.read(frame.data_mut(2)).enq().expect("V_buf.read()");
+
+            return;
+        }
+    }
+
+    buf.set_format(format::Pixel::RGBA);
 
     let pro_que = get_pro_que(engine).unwrap();
 
-    if yuv_buffers.is_some() {
-        let frame = buf.get_frame();
+    let ocl_buffer =
+        build_ocl_buffer(pro_que, buf.as_mut_slice().len()).expect("OpenCL buffer build");
 
-        let &mut (ref Y_buf, ref U_buf, ref V_buf) = yuv_buffers.unwrap();
+    let kernel = pro_que.kernel_builder("rgba_to_uint8_rgba_buffer")
+                        .global_work_size(image.dims())
+                        .arg(image)
+                        .arg(&ocl_buffer)
+                        .build()
+                        .unwrap();
 
-        let kernel = pro_que.kernel_builder(func_name.unwrap())
-                            .global_work_size(image.dims())
-                            .arg(image)
-                            .arg(frame.stride(0))
-                            .arg(frame.stride(1))
-                            .arg(frame.stride(2))
-                            .arg(Y_buf)
-                            .arg(U_buf)
-                            .arg(V_buf)
-                            .build()
-                            .unwrap();
-
-        unsafe {
-            kernel.enq().expect("kernel.enq()");
-        }
-
-        Y_buf.read(frame.data_mut(0)).enq().expect("Y_buf.read()");
-        U_buf.read(frame.data_mut(1)).enq().expect("U_buf.read()");
-        V_buf.read(frame.data_mut(2)).enq().expect("V_buf.read()");
-    } else {
-        buf.set_format(format::Pixel::RGBA);
-
-        let ocl_buffer =
-            build_ocl_buffer(pro_que, buf.as_mut_slice().len()).expect("OpenCL buffer build");
-
-        let kernel = pro_que.kernel_builder("rgba_to_uint8_rgba_buffer")
-                            .global_work_size(image.dims())
-                            .arg(image)
-                            .arg(&ocl_buffer)
-                            .build()
-                            .unwrap();
-
-        unsafe {
-            kernel.enq().expect("kernel.enq()");
-        }
-
-        ocl_buffer.read(buf.as_mut_slice())
-                  .enq()
-                  .expect("buffer.read()");
+    unsafe {
+        kernel.enq().expect("kernel.enq()");
     }
+
+    ocl_buffer.read(buf.as_mut_slice())
+              .enq()
+              .expect("buffer.read()");
 }
 
 /// Reads pixels into the buffer.
