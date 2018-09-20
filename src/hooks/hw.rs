@@ -37,11 +37,12 @@ static mut POINTERS: Option<Pointers> = None;
 /// Pointers to all used hw functions.
 struct Functions {
     RunListenServer: unsafe extern "C" fn(*mut c_void,
-     *mut c_char,
-     *mut c_char,
-     *mut c_char,
-     *mut c_void,
-     *mut c_void) -> c_int,
+                                          *mut c_char,
+                                          *mut c_char,
+                                          *mut c_char,
+                                          *mut c_void,
+                                          *mut c_void)
+                                          -> c_int,
 
     CL_Disconnect: unsafe extern "C" fn(),
     Cmd_AddCommand: unsafe extern "C" fn(*const c_char, *mut c_void),
@@ -52,7 +53,7 @@ struct Functions {
     Cvar_RegisterVariable: unsafe extern "C" fn(*mut cvar::cvar_t),
     GL_SetMode:
         unsafe extern "C" fn(c_int, *mut c_void, *mut c_void, c_int, *const c_char, *const c_char)
-         -> c_int,
+                             -> c_int,
     Host_FilterTime: unsafe extern "C" fn(c_float) -> c_int,
     Key_Event: unsafe extern "C" fn(key: c_int, down: c_int),
     Memory_Init: unsafe extern "C" fn(*mut c_void, c_int),
@@ -808,8 +809,8 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &mut Engine,
         if let Some((&mut (ref Y_buf, ref U_buf, ref V_buf), pro_que)) =
             get_yuv_buffers_and_pro_que(engine,
                                         (frame.data(0).len(),
-                                        frame.data(1).len(),
-                                        frame.data(2).len()))
+                                         frame.data(1).len(),
+                                         frame.data(2).len()))
         {
             let kernel = pro_que.kernel_builder(func_name)
                                 .global_work_size(image.dims())
