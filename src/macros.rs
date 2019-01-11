@@ -74,6 +74,6 @@ macro_rules! cvar {
                                unsafe { &ENGINE_CVAR as *const _ as *mut _ }
                            },
                            default_value: $default_value,
-                           name: stringify!($name), };
+                           name: stringify!($name) };
     };
 }

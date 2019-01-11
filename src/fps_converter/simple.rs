@@ -20,7 +20,7 @@ impl SimpleConverter {
         assert!(time_base > 0f64);
 
         Self { remainder: 0f64,
-               time_base, }
+               time_base }
     }
 }
 

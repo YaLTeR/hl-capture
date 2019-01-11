@@ -58,7 +58,7 @@ impl SamplingConverter {
 
         Self { remainder: 0f64,
                time_base,
-               private: SamplingConverterPrivate::new(engine, video_resolution), }
+               private: SamplingConverterPrivate::new(engine, video_resolution) }
     }
 
     /// This should be called before an engine restart.
@@ -219,7 +219,7 @@ impl SamplingConverterPrivate {
                ocl_backup_buffer: None,
                video_resolution,
                gl_sampling_buffer: Vec::new(),
-               gl_read_buffer: Vec::new(), }
+               gl_read_buffer: Vec::new() }
     }
 
     #[inline]
@@ -312,7 +312,7 @@ impl OclRuntimeData {
                                                 ocl::MemFlags::new().read_write().host_read_only(),
                                                 ocl::enums::ImageChannelDataType::Float,
                                                 (w, h).into()).expect("building an OpenCL image"),
-                        ocl_current_buffer_index: 0, })
+                        ocl_current_buffer_index: 0 })
         } else {
             None
         };

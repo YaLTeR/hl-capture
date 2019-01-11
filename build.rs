@@ -62,7 +62,7 @@ struct Data {
 impl Data {
     fn new() -> Self {
         Self { commands: Vec::new(),
-               cvars: Vec::new(), }
+               cvars: Vec::new() }
     }
 }
 
@@ -77,7 +77,7 @@ fn get_data(path: &Path) -> Data {
         visitor.visit_file(&file);
 
         Data { commands: visitor.commands,
-               cvars: visitor.cvars, }
+               cvars: visitor.cvars }
     } else {
         Data::new()
     }
@@ -127,7 +127,7 @@ struct MyVisitor {
 impl MyVisitor {
     fn new() -> Self {
         Self { commands: Vec::new(),
-               cvars: Vec::new(), }
+               cvars: Vec::new() }
     }
 }
 

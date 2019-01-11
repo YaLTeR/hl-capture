@@ -51,9 +51,12 @@ struct Functions {
     Con_Printf: unsafe extern "C" fn(*const c_char),
     Con_ToggleConsole_f: unsafe extern "C" fn(),
     Cvar_RegisterVariable: unsafe extern "C" fn(*mut cvar::cvar_t),
-    GL_SetMode:
-        unsafe extern "C" fn(c_int, *mut c_void, *mut c_void, c_int, *const c_char, *const c_char)
-                             -> c_int,
+    GL_SetMode: unsafe extern "C" fn(c_int,
+                                     *mut c_void,
+                                     *mut c_void,
+                                     c_int,
+                                     *const c_char,
+                                     *const c_char) -> c_int,
     Host_FilterTime: unsafe extern "C" fn(c_float) -> c_int,
     Key_Event: unsafe extern "C" fn(key: c_int, down: c_int),
     Memory_Init: unsafe extern "C" fn(*mut c_void, c_int),
@@ -375,17 +378,16 @@ pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
         engine.data_mut().sound_remainder = samples - samples_rounded;
 
         AUDIO_BUFFER.with(|b| {
-                              let mut buf = capture::get_audio_buffer(engine.marker().1);
-                              buf.data_mut().clear();
-                              *b.borrow_mut() = Some(buf);
-                          });
+                        let mut buf = capture::get_audio_buffer(engine.marker().1);
+                        buf.data_mut().clear();
+                        *b.borrow_mut() = Some(buf);
+                    });
 
         real!(S_PaintChannels)(paintedtime + samples_rounded as i32);
 
         AUDIO_BUFFER.with(|b| {
-                              capture::capture_audio(engine.marker().1,
-                                                     b.borrow_mut().take().unwrap())
-                          });
+                        capture::capture_audio(engine.marker().1, b.borrow_mut().take().unwrap())
+                    });
 
         engine.data_mut().capture_sound = false;
     }
@@ -397,30 +399,27 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
     let engine = Engine::new();
     if engine.data().capture_sound {
         AUDIO_BUFFER.with(|b| {
-                              let mut buf = b.borrow_mut();
-                              let buf = buf.as_mut().unwrap().data_mut();
+                        let mut buf = b.borrow_mut();
+                        let buf = buf.as_mut().unwrap().data_mut();
 
-                              let paintedtime = *ptr!(paintedtime);
-                              let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
+                        let paintedtime = *ptr!(paintedtime);
+                        let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
 
-                              let engine = Engine::new();
-                              let volume =
-                                  (capture::get_capture_parameters(&engine).volume * 256f32) as i32;
+                        let engine = Engine::new();
+                        let volume =
+                            (capture::get_capture_parameters(&engine).volume * 256f32) as i32;
 
-                              for sample in
-                                  paintbuffer.iter().take((end - paintedtime) as usize * 2)
-                              {
-                                  // Clamping as done in Snd_WriteLinearBlastStereo16().
-                                  let l16 = cmp::min(32767,
-                                                     cmp::max(-32768, (sample.left * volume) >> 8))
-                                            as i16;
-                                  let r16 = cmp::min(32767,
-                                                     cmp::max(-32768, (sample.right * volume) >> 8))
-                                            as i16;
+                        for sample in paintbuffer.iter().take((end - paintedtime) as usize * 2) {
+                            // Clamping as done in Snd_WriteLinearBlastStereo16().
+                            let l16 = cmp::min(32767, cmp::max(-32768, (sample.left * volume) >> 8))
+                                      as i16;
+                            let r16 = cmp::min(32767,
+                                               cmp::max(-32768, (sample.right * volume) >> 8))
+                                      as i16;
 
-                                  buf.push((l16, r16));
-                              }
-                          });
+                            buf.push((l16, r16));
+                        }
+                    });
     }
 
     real!(S_TransferStereo16)(end);
@@ -524,7 +523,7 @@ fn refresh_pointers(_: MainThreadMarker) -> Result<()> {
                                    realtime: find!(hw, "realtime"),
                                    s_BackBufferFBO: find!(hw, "s_BackBufferFBO"),
                                    shm: find!(hw, "shm"),
-                                   window_rect: find!(hw, "window_rect"), });
+                                   window_rect: find!(hw, "window_rect") });
     }
 
     Ok(())
@@ -670,11 +669,11 @@ pub fn get_pro_que(engine: &mut Engine) -> Option<&mut ocl::ProQue> {
                                                        .context("error building ocl::ProQue")
                              })
                              .map_err(|e| {
-                                          engine.con_print(&format!("Could not initialize OpenCL, \
+                                 engine.con_print(&format!("Could not initialize OpenCL, \
                                                             proceeding without it. \
                                                             Error details:\n{}",
                                                            e).replace('\0', "\\x00"));
-                                      })
+                             })
                              .ok();
 
         engine.data_mut().pro_que = MaybeUnavailable::from_check_result(pro_que);

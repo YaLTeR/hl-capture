@@ -89,8 +89,8 @@ impl Encoder {
 
         let mut context =
             format::output(&parameters.filename).context({
-                                                             "could not create the output context"
-                                                         })?;
+                                                    "could not create the output context"
+                                                })?;
         let global = context.format()
                             .flags()
                             .contains(format::flag::GLOBAL_HEADER);
@@ -142,27 +142,25 @@ impl Encoder {
             let extra_settings = [("crf", &parameters.crf),
                                   ("preset", &parameters.preset),
                                   ("threads", &parameters.vpx_threads)];
-            let extra_settings = extra_settings.iter().filter_map(|&(name, value)| {
-                                                                      value.split_whitespace()
-                                                                           .next()
-                                                                           .map(|v| (name, v))
-                                                                  });
+            let extra_settings =
+                extra_settings.iter().filter_map(|&(name, value)| {
+                                         value.split_whitespace().next().map(|v| (name, v))
+                                     });
 
-            let encoder_settings = parameters.video_encoder_settings
-                                             .split_whitespace()
-                                             .filter_map(|s| {
-                                                             let mut split = s.splitn(2, '=');
+            let encoder_settings =
+                parameters.video_encoder_settings
+                          .split_whitespace()
+                          .filter_map(|s| {
+                              let mut split = s.splitn(2, '=');
 
-                                                             if let (Some(key), Some(value)) =
-                                                                 (split.next(), split.next())
-                                                             {
-                                                                 return Some((key, value));
-                                                             }
+                              if let (Some(key), Some(value)) = (split.next(), split.next()) {
+                                  return Some((key, value));
+                              }
 
-                                                             None
-                                                         })
-                                             .chain(extra_settings)
-                                             .collect();
+                              None
+                          })
+                          .chain(extra_settings)
+                          .collect();
 
             let encoder = encoder.open_as_with(video_codec, encoder_settings)
                                  .context("could not open the video encoder")?;
@@ -218,20 +216,19 @@ impl Encoder {
             encoder.set_channel_layout(channel_layout);
             encoder.set_channels(channel_layout.channels());
 
-            let encoder_settings = parameters.audio_encoder_settings
-                                             .split_whitespace()
-                                             .filter_map(|s| {
-                                                             let mut split = s.splitn(2, '=');
+            let encoder_settings =
+                parameters.audio_encoder_settings
+                          .split_whitespace()
+                          .filter_map(|s| {
+                              let mut split = s.splitn(2, '=');
 
-                                                             if let (Some(key), Some(value)) =
-                                                                 (split.next(), split.next())
-                                                             {
-                                                                 return Some((key, value));
-                                                             }
+                              if let (Some(key), Some(value)) = (split.next(), split.next()) {
+                                  return Some((key, value));
+                              }
 
-                                                             None
-                                                         })
-                                             .collect();
+                              None
+                          })
+                          .collect();
 
             let encoder = encoder.open_as_with(audio_codec, encoder_settings)
                                  .context("could not open the audio encoder")?;
@@ -242,20 +239,19 @@ impl Encoder {
             (encoder, stream.index())
         };
 
-        let muxer_settings = parameters.muxer_settings
-                                       .split_whitespace()
-                                       .filter_map(|s| {
-                                                       let mut split = s.splitn(2, '=');
+        let muxer_settings =
+            parameters.muxer_settings
+                      .split_whitespace()
+                      .filter_map(|s| {
+                          let mut split = s.splitn(2, '=');
 
-                                                       if let (Some(key), Some(value)) =
-                                                           (split.next(), split.next())
-                                                       {
-                                                           return Some((key, value));
-                                                       }
+                          if let (Some(key), Some(value)) = (split.next(), split.next()) {
+                              return Some((key, value));
+                          }
 
-                                                       None
-                                                   })
-                                       .collect();
+                          None
+                      })
+                      .collect();
 
         context.write_header_with(muxer_settings)
                .context("could not write the header")?;
@@ -311,7 +307,7 @@ impl Encoder {
                   video_pts: 0,
                   audio_pts: 0,
 
-                  audio_position: 0, })
+                  audio_position: 0 })
     }
 
     fn push_frame(&mut self, frame: Option<&mut frame::Video>, times: usize) -> Result<()> {
@@ -508,7 +504,7 @@ impl PixFmtConverter {
     #[inline]
     fn new(output_format: format::Pixel) -> Self {
         Self { inner: None,
-               output_format, }
+               output_format }
     }
 
     fn convert(&mut self, frame: &frame::Video) -> Result<&mut frame::Video> {
@@ -560,15 +556,15 @@ pub fn initialize() {
     static INIT: Once = ONCE_INIT;
 
     INIT.call_once(|| {
-                       if let Err(e) = ffmpeg::init().context("error initializing ffmpeg") {
-                           panic!("{}", format_error(&e.into()));
-                       }
+            if let Err(e) = ffmpeg::init().context("error initializing ffmpeg") {
+                panic!("{}", format_error(&e.into()));
+            }
 
-                       *VIDEO_ENCODER.lock().unwrap() =
-                           encoder::find_by_name("libx264").and_then(|e| e.video().ok());
-                       *AUDIO_ENCODER.lock().unwrap() =
-                           encoder::find_by_name("aac").and_then(|e| e.audio().ok());
-                   });
+            *VIDEO_ENCODER.lock().unwrap() =
+                encoder::find_by_name("libx264").and_then(|e| e.video().ok());
+            *AUDIO_ENCODER.lock().unwrap() =
+                encoder::find_by_name("aac").and_then(|e| e.audio().ok());
+        });
 }
 
 /// Outputs information about the selected video encoder.

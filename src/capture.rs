@@ -86,7 +86,7 @@ impl VideoBuffer {
                format: format::Pixel::RGB24,
                components: format::Pixel::RGB24.descriptor().unwrap().nb_components(),
                frame: VideoFrame::empty(),
-               data_is_in_frame: false, }
+               data_is_in_frame: false }
     }
 
     #[inline]
@@ -196,7 +196,7 @@ impl<'a, T> SendOnDrop<'a, T> {
     #[inline]
     fn new(buffer: T, channel: &'a Sender<T>) -> Self {
         Self { buffer: Some(buffer),
-               channel, }
+               channel }
     }
 }
 
@@ -344,18 +344,18 @@ fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>
 pub fn initialize(_: MainThreadMarker) {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
-                       let (tx, rx) = channel::<VideoBuffer>();
-                       let (tx2, rx2) = channel::<AudioBuffer>();
-                       let (tx3, rx3) = channel::<GameThreadEvent>();
-                       let (tx4, rx4) = channel::<CaptureThreadEvent>();
+            let (tx, rx) = channel::<VideoBuffer>();
+            let (tx2, rx2) = channel::<AudioBuffer>();
+            let (tx3, rx3) = channel::<GameThreadEvent>();
+            let (tx4, rx4) = channel::<CaptureThreadEvent>();
 
-                       *VIDEO_BUF_RECEIVER.lock().unwrap() = Some(rx);
-                       *AUDIO_BUF_RECEIVER.lock().unwrap() = Some(rx2);
-                       *GAME_THREAD_RECEIVER.lock().unwrap() = Some(rx3);
-                       *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx4);
+            *VIDEO_BUF_RECEIVER.lock().unwrap() = Some(rx);
+            *AUDIO_BUF_RECEIVER.lock().unwrap() = Some(rx2);
+            *GAME_THREAD_RECEIVER.lock().unwrap() = Some(rx3);
+            *SEND_TO_CAPTURE_THREAD.lock().unwrap() = Some(tx4);
 
-                       thread::spawn(move || capture_thread(&tx, &tx2, &tx3, &rx4));
-                   });
+            thread::spawn(move || capture_thread(&tx, &tx2, &tx3, &rx4));
+        });
 }
 
 #[inline]
@@ -516,13 +516,13 @@ fn parse_exposure(string: &str) -> Result<f64> {
           .context("could not convert the string to a floating point value")
           .map_err(|e| e.into())
           .and_then(|x| {
-                        if x > 0f64 && x <= 1f64 {
-                            Ok(x)
-                        } else {
-                            bail!("allowed exposure values range \
-                                   from 0 (non-inclusive) to 1 (inclusive)")
-                        }
-                    })
+              if x > 0f64 && x <= 1f64 {
+                  Ok(x)
+              } else {
+                  bail!("allowed exposure values range \
+                         from 0 (non-inclusive) to 1 (inclusive)")
+              }
+          })
 }
 
 /// Parses the given string into a pixel format.
@@ -593,9 +593,9 @@ fn parse_capture_parameters(engine: &mut Engine) -> Result<CaptureParameters> {
 /// Starts and stops the encoder.
 fn test_encoder(parameters: &EncoderParameters) -> Result<()> {
     let mut encoder = Encoder::start(parameters).context({
-                                   "could not start the encoder; check your terminal (Half-Life's \
-                                    standard output) for ffmpeg messages"
-                               })?;
+                          "could not start the encoder; check your terminal (Half-Life's \
+                           standard output) for ffmpeg messages"
+                      })?;
     encoder.finish().context("could not finish the encoder")?;
     Ok(())
 }

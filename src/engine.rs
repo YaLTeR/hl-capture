@@ -23,7 +23,7 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer =
                                                      encoder_pixel_format: None,
                                                      pro_que: MaybeUnavailable::NotChecked,
                                                      ocl_yuv_buffers:
-                                                         MaybeUnavailable::NotChecked, }, };
+                                                         MaybeUnavailable::NotChecked } };
 
 /// Global variables accessible from the main game thread.
 pub struct MainThreadData {
@@ -82,7 +82,7 @@ impl Engine {
     /// Unsafe because this function should only be called from the main game thread.
     #[inline]
     pub unsafe fn new() -> Self {
-        Engine { _private: PhantomData, }
+        Engine { _private: PhantomData }
     }
 
     /// Splits off a `MainThreadMarker`.
@@ -155,7 +155,7 @@ impl Engine {
     #[inline]
     pub fn get_engine_cvar(&mut self, cvar: &CVar) -> EngineCVarGuard {
         EngineCVarGuard { engine_cvar: unsafe { cvar.get_engine_cvar() },
-                          _borrow_guard: self, }
+                          _borrow_guard: self }
     }
 }
 
@@ -179,6 +179,6 @@ impl<'engine> MainThreadMarker<'engine> {
     #[inline]
     unsafe fn new() -> Self {
         Self { _private: PhantomData,
-               _private_2: PhantomData, }
+               _private_2: PhantomData }
     }
 }

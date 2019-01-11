@@ -16,7 +16,7 @@ impl<'a> Args<'a> {
     pub fn new(engine: &'a engine::Engine) -> Self {
         Self { count: engine.cmd_argc(),
                index: 0,
-               engine: engine, }
+               engine: engine }
     }
 }
 

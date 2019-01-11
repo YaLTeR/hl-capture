@@ -14,7 +14,7 @@ pub const EMPTY_CVAR_T: cvar_t = cvar_t { name: 0 as *const _,
                                           string: 0 as *mut _,
                                           flags: 0,
                                           value: 0f32,
-                                          next: 0 as *mut _, };
+                                          next: 0 as *mut _ };
 
 /// The engine `CVar` type.
 #[repr(C)]
