@@ -1,16 +1,4 @@
-use failure::Error;
 use std::mem;
-
-/// Returns a string describing the error and the full chain.
-pub fn format_error(error: &Error) -> String {
-    let mut buf = format!("Error: {}\n", error);
-
-    for cause in error.iter_causes() {
-        buf += &format!("Caused by: {}\n", cause);
-    }
-
-    buf
-}
 
 /// Represents a value that is not checked at first, and upon being checked it might be available
 /// or unavailable.
