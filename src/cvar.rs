@@ -1,4 +1,4 @@
-use failure::{Error, Fail, ResultExt};
+use failure::{bail, ensure, Error, Fail, ResultExt};
 use libc::*;
 use std::ffi::{CStr, CString};
 use std::result;

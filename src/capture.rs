@@ -1,6 +1,7 @@
-use failure::{err_msg, Error, ResultExt};
+use failure::{bail, ensure, err_msg, Error, ResultExt};
 use ffmpeg::frame::Video as VideoFrame;
 use ffmpeg::{format, Rational};
+use lazy_static::lazy_static;
 use std::ops::Deref;
 use std::result;
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
@@ -72,7 +73,7 @@ pub struct AudioBuffer {
     data: Vec<(i16, i16)>,
 }
 
-struct SendOnDrop<'a, T: 'a> {
+struct SendOnDrop<'a, T> {
     buffer: Option<T>,
     channel: &'a Sender<T>,
 }
@@ -307,7 +308,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
 }
 
 fn encode(encoder: &mut Option<Encoder>,
-          buf: SendOnDrop<VideoBuffer>,
+          buf: SendOnDrop<'_, VideoBuffer>,
           times: usize,
           frame: &mut VideoFrame)
           -> Result<()> {
@@ -341,7 +342,7 @@ fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>
     }
 }
 
-pub fn initialize(_: MainThreadMarker) {
+pub fn initialize(_: MainThreadMarker<'_>) {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
             let (tx, rx) = channel::<VideoBuffer>();
@@ -359,7 +360,7 @@ pub fn initialize(_: MainThreadMarker) {
 }
 
 #[inline]
-pub fn get_buffer(_: MainThreadMarker, (width, height): (u32, u32)) -> VideoBuffer {
+pub fn get_buffer(_: MainThreadMarker<'_>, (width, height): (u32, u32)) -> VideoBuffer {
     let mut buf = VIDEO_BUF_RECEIVER.lock()
                                     .unwrap()
                                     .as_ref()
@@ -373,7 +374,7 @@ pub fn get_buffer(_: MainThreadMarker, (width, height): (u32, u32)) -> VideoBuff
 }
 
 #[inline]
-pub fn get_audio_buffer(_: MainThreadMarker) -> AudioBuffer {
+pub fn get_audio_buffer(_: MainThreadMarker<'_>) -> AudioBuffer {
     AUDIO_BUF_RECEIVER.lock()
                       .unwrap()
                       .as_ref()
@@ -383,7 +384,7 @@ pub fn get_audio_buffer(_: MainThreadMarker) -> AudioBuffer {
 }
 
 #[inline]
-pub fn get_event(_: MainThreadMarker) -> Option<GameThreadEvent> {
+pub fn get_event(_: MainThreadMarker<'_>) -> Option<GameThreadEvent> {
     match GAME_THREAD_RECEIVER.lock()
                               .unwrap()
                               .as_ref()
@@ -397,7 +398,7 @@ pub fn get_event(_: MainThreadMarker) -> Option<GameThreadEvent> {
 }
 
 #[inline]
-pub fn get_event_block(_: MainThreadMarker) -> GameThreadEvent {
+pub fn get_event_block(_: MainThreadMarker<'_>) -> GameThreadEvent {
     GAME_THREAD_RECEIVER.lock()
                         .unwrap()
                         .as_ref()
@@ -407,7 +408,7 @@ pub fn get_event_block(_: MainThreadMarker) -> GameThreadEvent {
 }
 
 #[inline]
-pub fn capture(_: MainThreadMarker, buf: VideoBuffer, times: usize) {
+pub fn capture(_: MainThreadMarker<'_>, buf: VideoBuffer, times: usize) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
@@ -417,7 +418,7 @@ pub fn capture(_: MainThreadMarker, buf: VideoBuffer, times: usize) {
 }
 
 #[inline]
-pub fn capture_audio(_: MainThreadMarker, buf: AudioBuffer) {
+pub fn capture_audio(_: MainThreadMarker<'_>, buf: AudioBuffer) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()

@@ -1,10 +1,11 @@
-use failure::{Error, ResultExt};
+use failure::{bail, ensure, Error, ResultExt};
 use ffmpeg::channel_layout::{self, ChannelLayout};
 use ffmpeg::codec::{self, encoder};
 use ffmpeg::format::{self, context};
 use ffmpeg::software::{self, resampling, scaling};
 use ffmpeg::util::frame;
 use ffmpeg::{self, color, Packet, Rational};
+use lazy_static::lazy_static;
 use std::cmp;
 use std::result;
 use std::sync::{Mutex, Once, ONCE_INIT};

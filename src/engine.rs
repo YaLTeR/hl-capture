@@ -1,4 +1,4 @@
-use failure::Error;
+use failure::{bail, ensure, Error};
 use ocl;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -87,13 +87,13 @@ impl Engine {
 
     /// Splits off a `MainThreadMarker`.
     #[inline]
-    pub fn marker(&self) -> (&Self, MainThreadMarker) {
+    pub fn marker(&self) -> (&Self, MainThreadMarker<'_>) {
         (self, unsafe { MainThreadMarker::new() })
     }
 
     /// Splits off a `MainThreadMarker` from a mutable reference.
     #[inline]
-    pub fn marker_mut(&mut self) -> (&mut Self, MainThreadMarker) {
+    pub fn marker_mut(&mut self) -> (&mut Self, MainThreadMarker<'_>) {
         (self, unsafe { MainThreadMarker::new() })
     }
 
@@ -111,7 +111,7 @@ impl Engine {
 
     /// Returns an iterator over the console command arguments.
     #[inline]
-    pub fn args(&self) -> command::Args {
+    pub fn args(&self) -> command::Args<'_> {
         command::Args::new(self)
     }
 
@@ -153,7 +153,7 @@ impl Engine {
     /// Takes a mutable reference to Engine to statically ensure
     /// that no engine functions are called while the engine CVar reference is valid.
     #[inline]
-    pub fn get_engine_cvar(&mut self, cvar: &CVar) -> EngineCVarGuard {
+    pub fn get_engine_cvar(&mut self, cvar: &CVar) -> EngineCVarGuard<'_> {
         EngineCVarGuard { engine_cvar: unsafe { cvar.get_engine_cvar() },
                           _borrow_guard: self }
     }

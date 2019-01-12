@@ -1,7 +1,3 @@
-extern crate proc_macro2;
-extern crate syn;
-extern crate walkdir;
-
 use proc_macro2::TokenTree;
 use std::env;
 use std::ffi::OsStr;
@@ -12,14 +8,14 @@ use syn::{
     visit::{self, Visit},
     Macro,
 };
+use walkdir::WalkDir;
 
 fn main() {
     // Parse all .rs files to collect everything which implements Command.
     // This code won't work properly with lib.rs or mod.rs.
     let mut data = Data::new();
 
-    for entry in
-        walkdir::WalkDir::new("src").into_iter()
+    for entry in WalkDir::new("src").into_iter()
                                     .filter_map(|e| e.ok())
                                     .filter(|e| !e.file_type().is_dir())
                                     .filter(|e| e.path().extension() == Some(OsStr::new("rs")))

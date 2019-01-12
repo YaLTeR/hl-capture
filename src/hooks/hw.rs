@@ -96,12 +96,12 @@ pub struct OclGlTexture {
 }
 
 pub enum FrameCapture {
-    OpenGL(fn(MainThreadMarker, (u32, u32), &mut [u8])),
+    OpenGL(fn(MainThreadMarker<'_>, (u32, u32), &mut [u8])),
     OpenCL(OclGlTexture),
 }
 
 impl OclGlTexture {
-    fn new(_: MainThreadMarker,
+    fn new(_: MainThreadMarker<'_>,
            texture: GLuint,
            queue: ocl::Queue,
            dims: ocl::SpatialDims)
@@ -487,7 +487,7 @@ pub unsafe fn VideoMode_IsWindowed() -> c_int {
 }
 
 /// Obtains and stores all necessary function and variable addresses.
-fn refresh_pointers(_: MainThreadMarker) -> Result<()> {
+fn refresh_pointers(_: MainThreadMarker<'_>) -> Result<()> {
     let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).context("couldn't load hw.so")?;
 
     unsafe {
@@ -531,7 +531,7 @@ fn refresh_pointers(_: MainThreadMarker) -> Result<()> {
 
 /// Resets all pointers to their default values.
 #[inline]
-fn reset_pointers(_: MainThreadMarker) {
+fn reset_pointers(_: MainThreadMarker<'_>) {
     unsafe {
         FUNCTIONS = None;
         POINTERS = None;
@@ -608,7 +608,7 @@ pub unsafe fn cmd_argv(index: u32) -> String {
 }
 
 /// Returns the current game resolution.
-pub fn get_resolution(_: MainThreadMarker) -> (u32, u32) {
+pub fn get_resolution(_: MainThreadMarker<'_>) -> (u32, u32) {
     let mut width;
     let mut height;
 
@@ -859,7 +859,7 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &mut Engine,
 }
 
 /// Reads pixels into the buffer.
-fn read_pixels(_: MainThreadMarker, (w, h): (u32, u32), buf: &mut [u8]) {
+fn read_pixels(_: MainThreadMarker<'_>, (w, h): (u32, u32), buf: &mut [u8]) {
     unsafe {
         // Our buffer expects 1-byte alignment.
         gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
@@ -876,7 +876,7 @@ fn read_pixels(_: MainThreadMarker, (w, h): (u32, u32), buf: &mut [u8]) {
 }
 
 /// Retrieves the current OpenGL context.
-fn get_opengl_context(_: MainThreadMarker) -> *mut c_void {
+fn get_opengl_context(_: MainThreadMarker<'_>) -> *mut c_void {
     unsafe { (**ptr!(game)).m_hSDLGLContext }
 }
 
