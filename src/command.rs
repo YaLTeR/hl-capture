@@ -20,7 +20,7 @@ impl<'a> Args<'a> {
     }
 }
 
-impl<'a> Iterator for Args<'a> {
+impl Iterator for Args<'_> {
     type Item = String;
 
     #[inline]
@@ -40,7 +40,7 @@ impl<'a> Iterator for Args<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for Args<'a> {}
+impl ExactSizeIterator for Args<'_> {}
 
 pub trait Command: Send + Sync {
     fn name(&self) -> &'static [u8];

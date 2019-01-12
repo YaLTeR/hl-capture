@@ -159,7 +159,7 @@ impl Engine {
     }
 }
 
-impl<'a> Deref for EngineCVarGuard<'a> {
+impl Deref for EngineCVarGuard<'_> {
     type Target = cvar_t;
 
     #[inline]
@@ -168,14 +168,14 @@ impl<'a> Deref for EngineCVarGuard<'a> {
     }
 }
 
-impl<'a> DerefMut for EngineCVarGuard<'a> {
+impl DerefMut for EngineCVarGuard<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut cvar_t {
         self.engine_cvar
     }
 }
 
-impl<'engine> MainThreadMarker<'engine> {
+impl MainThreadMarker<'_> {
     #[inline]
     unsafe fn new() -> Self {
         Self { _private: PhantomData,

@@ -201,14 +201,14 @@ impl<'a, T> SendOnDrop<'a, T> {
     }
 }
 
-impl<'a, T> Drop for SendOnDrop<'a, T> {
+impl<T> Drop for SendOnDrop<'_, T> {
     #[inline]
     fn drop(&mut self) {
         self.channel.send(self.buffer.take().unwrap()).unwrap();
     }
 }
 
-impl<'a, T> Deref for SendOnDrop<'a, T> {
+impl<T> Deref for SendOnDrop<'_, T> {
     type Target = T;
 
     #[inline]
