@@ -34,10 +34,10 @@ fn main() {
 
         data.commands.extend(entry_data.commands
                                        .into_iter()
-                                       .map(|c| format!("{}::{}", &path, c)));
+                                       .map(|c| format!("crate{}::{}", &path, c)));
         data.cvars.extend(entry_data.cvars
                                     .into_iter()
-                                    .map(|c| format!("{}::{}", &path, c)));
+                                    .map(|c| format!("crate{}::{}", &path, c)));
     }
 
     let command_array = make_command_array(data.commands);
@@ -102,7 +102,8 @@ fn make_command_array(commands: Vec<String>) -> String {
 }
 
 fn make_cvar_array(cvars: Vec<String>) -> String {
-    let mut buf = format!("pub static CVARS: [&::cvar::CVar; {}] = [", cvars.len());
+    let mut buf = format!("pub static CVARS: [&crate::cvar::CVar; {}] = [",
+                          cvars.len());
 
     let mut iter = cvars.into_iter();
 

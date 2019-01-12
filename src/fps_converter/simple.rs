@@ -1,8 +1,8 @@
 use ffmpeg::format;
 
 use super::*;
-use capture;
-use hooks::hw::FrameCapture;
+use crate::capture;
+use crate::hooks::hw::FrameCapture;
 
 /// Simple FPS converter which drops and duplicates frames to get constant FPS output.
 pub struct SimpleConverter {

@@ -7,12 +7,12 @@ use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::{Mutex, Once, RwLock, ONCE_INIT};
 use std::thread;
 
-use encode::{Encoder, EncoderParameters};
-use engine::{Engine, MainThreadMarker};
-use fps_converter::*;
-use hooks::hw;
+use crate::encode::{Encoder, EncoderParameters};
+use crate::engine::{Engine, MainThreadMarker};
+use crate::fps_converter::*;
+use crate::hooks::hw;
 // use profiler::*;
-use utils::format_error;
+use crate::utils::format_error;
 
 type Result<T> = result::Result<T, Error>;
 

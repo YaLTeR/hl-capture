@@ -9,7 +9,7 @@ use std::cmp;
 use std::result;
 use std::sync::{Mutex, Once, ONCE_INIT};
 
-use utils::format_error;
+use crate::utils::format_error;
 
 type Result<T> = result::Result<T, Error>;
 

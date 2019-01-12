@@ -4,10 +4,10 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::result;
 
-use command;
-use cvar::{cvar_t, CVar};
-use hooks::hw;
-use utils::MaybeUnavailable;
+use crate::command;
+use crate::cvar::{cvar_t, CVar};
+use crate::hooks::hw;
+use crate::utils::MaybeUnavailable;
 
 type Result<T> = result::Result<T, Error>;
 
@@ -16,7 +16,7 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer =
                                                      capture_sound: false,
                                                      sound_remainder: 0f64,
                                                      sound_capture_mode:
-                                                         ::hooks::hw::SoundCaptureMode::Normal,
+                                                         crate::hooks::hw::SoundCaptureMode::Normal,
                                                      inside_key_event: false,
                                                      inside_gl_setmode: false,
                                                      fps_converter: None,
@@ -27,13 +27,13 @@ static mut MAIN_THREAD_DATA: MainThreadDataContainer =
 
 /// Global variables accessible from the main game thread.
 pub struct MainThreadData {
-    pub capture_parameters: Option<::capture::CaptureParameters>,
+    pub capture_parameters: Option<crate::capture::CaptureParameters>,
     pub capture_sound: bool,
     pub sound_remainder: f64,
-    pub sound_capture_mode: ::hooks::hw::SoundCaptureMode,
+    pub sound_capture_mode: crate::hooks::hw::SoundCaptureMode,
     pub inside_key_event: bool,
     pub inside_gl_setmode: bool,
-    pub fps_converter: Option<::fps_converter::FPSConverters>,
+    pub fps_converter: Option<crate::fps_converter::FPSConverters>,
     pub encoder_pixel_format: Option<::ffmpeg::format::Pixel>,
     pub pro_que: MaybeUnavailable<ocl::ProQue>,
     pub ocl_yuv_buffers: MaybeUnavailable<(ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)>,

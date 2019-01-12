@@ -16,17 +16,17 @@ use std::ptr;
 use std::result;
 use std::slice;
 
-use capture::{self, GameThreadEvent};
-use command;
-use cvar;
-use dl;
-use encode;
-use engine::{Engine, MainThreadMarker};
-use fps_converter::*;
-use sdl;
-use utils::MaybeUnavailable;
+use crate::capture::{self, GameThreadEvent};
+use crate::command;
+use crate::cvar;
+use crate::dl;
+use crate::encode;
+use crate::engine::{Engine, MainThreadMarker};
+use crate::fps_converter::*;
+use crate::sdl;
+use crate::utils::MaybeUnavailable;
 
-use utils::format_error;
+use crate::utils::format_error;
 
 type Result<T> = result::Result<T, Error>;
 

@@ -2,9 +2,9 @@ use ffmpeg::format;
 use ocl::{self, OclPrm};
 
 use super::*;
-use capture;
-use hooks::hw::FrameCapture;
-use utils::MaybeUnavailable;
+use crate::capture;
+use crate::hooks::hw::FrameCapture;
+use crate::utils::MaybeUnavailable;
 
 /// Resampling FPS converter which averages input frames for smooth motion.
 pub struct SamplingConverter {

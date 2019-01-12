@@ -1,4 +1,4 @@
-use engine;
+use crate::engine;
 
 include!(concat!(env!("OUT_DIR"), "/command_array.rs"));
 

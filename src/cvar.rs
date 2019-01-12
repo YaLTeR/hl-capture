@@ -4,7 +4,7 @@ use std::ffi::{CStr, CString};
 use std::result;
 use std::str::FromStr;
 
-use engine::Engine;
+use crate::engine::Engine;
 
 type Result<T> = result::Result<T, Error>;
 

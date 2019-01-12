@@ -3,6 +3,7 @@ name = "hl-capture"
 version = "0.1.0"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 build = "build.rs"
+edition = "2018"
 
 [lib]
 crate-type = ["cdylib"]

@@ -35,16 +35,16 @@ macro_rules! command {
         impl $name {
             // This will get called by the engine, in main game thread.
             unsafe extern "C" fn callback() {
-                const F: &Fn(::engine::Engine) = &$callback;
+                const F: &Fn(crate::engine::Engine) = &$callback;
 
                 // We know this is the main game thread.
-                let engine = ::engine::Engine::new();
+                let engine = crate::engine::Engine::new();
 
                 F(engine);
             }
         }
 
-        impl ::command::Command for $name {
+        impl crate::command::Command for $name {
             fn name(&self) -> &'static [u8] {
                 lazy_static! {
                     static ref NAME: ::std::ffi::CString =
@@ -68,9 +68,9 @@ macro_rules! command {
 macro_rules! cvar {
     ($name:ident, $default_value:expr) => {
         #[allow(non_upper_case_globals)]
-        pub static $name: ::cvar::CVar =
-            ::cvar::CVar { engine_cvar: {
-                               static mut ENGINE_CVAR: ::cvar::cvar_t = ::cvar::EMPTY_CVAR_T;
+        pub static $name: crate::cvar::CVar =
+            crate::cvar::CVar { engine_cvar: {
+                               static mut ENGINE_CVAR: crate::cvar::cvar_t = crate::cvar::EMPTY_CVAR_T;
                                unsafe { &ENGINE_CVAR as *const _ as *mut _ }
                            },
                            default_value: $default_value,
