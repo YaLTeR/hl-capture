@@ -1,5 +1,8 @@
 use failure::Error;
 
+pub mod racy_ref_cell;
+pub use self::racy_ref_cell::RacyRefCell;
+
 pub mod maybe_unavaliable;
 pub use self::maybe_unavaliable::MaybeUnavailable;
 
