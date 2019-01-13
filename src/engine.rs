@@ -148,10 +148,10 @@ impl Engine {
         Ok(())
     }
 
-    /// Returns the engine CVar wrapped by the given CVar.
+    /// Returns the engine `CVar` wrapped by the given `CVar`.
     ///
-    /// Takes a mutable reference to Engine to statically ensure
-    /// that no engine functions are called while the engine CVar reference is valid.
+    /// Takes a mutable reference to `Engine` to statically ensure
+    /// that no engine functions are called while the engine `CVar` reference is valid.
     #[inline]
     pub fn get_engine_cvar(&mut self, cvar: &CVar) -> EngineCVarGuard<'_> {
         EngineCVarGuard { engine_cvar: unsafe { cvar.get_engine_cvar() },
