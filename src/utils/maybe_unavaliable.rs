@@ -65,6 +65,15 @@ impl<T> MaybeUnavailable<T> {
         }
     }
 
+    /// Returns `true` if the value is `Available`.
+    #[inline]
+    pub fn is_available(&self) -> bool {
+        match self {
+            MaybeUnavailable::Available(_) => true,
+            _ => false,
+        }
+    }
+
     /// Converts from `MaybeUnavailable<T>` to `MaybeUnavailable<&T>`.
     #[inline]
     pub fn as_ref(&self) -> MaybeUnavailable<&T> {
