@@ -2,6 +2,7 @@ use ffmpeg::format;
 
 use super::*;
 use crate::capture;
+use crate::engine::MainThreadMarker;
 use crate::hooks::hw::FrameCapture;
 
 /// Simple FPS converter which drops and duplicates frames to get constant FPS output.
@@ -25,8 +26,8 @@ impl SimpleConverter {
 }
 
 impl FPSConverter for SimpleConverter {
-    fn time_passed<F>(&mut self, engine: &mut Engine, frametime: f64, capture: F)
-        where F: FnOnce(&mut Engine) -> FrameCapture
+    fn time_passed<F>(&mut self, marker: MainThreadMarker, frametime: f64, capture: F)
+        where F: FnOnce(MainThreadMarker) -> FrameCapture
     {
         assert!(frametime >= 0.0f64);
 
@@ -38,23 +39,23 @@ impl FPSConverter for SimpleConverter {
         self.remainder -= frames as f64;
 
         if frames > 0 {
-            let frame_capture = capture(engine);
+            let frame_capture = capture(marker);
 
-            let (w, h) = hw::get_resolution(engine.marker().1);
-            let mut buf = capture::get_buffer(engine.marker().1, (w, h));
+            let (w, h) = hw::get_resolution(marker);
+            let mut buf = capture::get_buffer(marker, (w, h));
 
             match frame_capture {
                 FrameCapture::OpenGL(read_pixels) => {
                     buf.set_format(format::Pixel::RGB24);
-                    read_pixels(engine.marker().1, (w, h), buf.as_mut_slice());
+                    read_pixels(marker, (w, h), buf.as_mut_slice());
                 }
 
                 FrameCapture::OpenCL(ocl_gl_texture) => {
-                    hw::read_ocl_image_into_buf(engine, ocl_gl_texture.as_ref(), &mut buf);
+                    hw::read_ocl_image_into_buf(marker, ocl_gl_texture.as_ref(), &mut buf);
                 }
             }
 
-            capture::capture(engine.marker().1, buf, frames);
+            capture::capture(marker, buf, frames);
         }
     }
 }

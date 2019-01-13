@@ -1,4 +1,4 @@
-use crate::engine;
+use crate::engine::Engine;
 
 include!(concat!(env!("OUT_DIR"), "/command_array.rs"));
 
@@ -8,12 +8,12 @@ pub struct Args<'a> {
     index: u32,
 
     /// Engine functions.
-    engine: &'a engine::Engine,
+    engine: &'a Engine,
 }
 
 impl<'a> Args<'a> {
     #[inline]
-    pub fn new(engine: &'a engine::Engine) -> Self {
+    pub fn new(engine: &'a Engine) -> Self {
         Self { count: engine.cmd_argc(),
                index: 0,
                engine: engine }

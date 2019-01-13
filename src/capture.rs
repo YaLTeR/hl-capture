@@ -2,6 +2,7 @@ use failure::{bail, ensure, err_msg, Error, ResultExt};
 use ffmpeg::frame::Video as VideoFrame;
 use ffmpeg::{format, Rational};
 use lazy_static::lazy_static;
+use std::cell::Ref;
 use std::ops::Deref;
 use std::result;
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
@@ -342,7 +343,7 @@ fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>
     }
 }
 
-pub fn initialize(_: MainThreadMarker<'_>) {
+pub fn initialize(_: MainThreadMarker) {
     static INIT: Once = ONCE_INIT;
     INIT.call_once(|| {
             let (tx, rx) = channel::<VideoBuffer>();
@@ -360,7 +361,7 @@ pub fn initialize(_: MainThreadMarker<'_>) {
 }
 
 #[inline]
-pub fn get_buffer(_: MainThreadMarker<'_>, (width, height): (u32, u32)) -> VideoBuffer {
+pub fn get_buffer(_: MainThreadMarker, (width, height): (u32, u32)) -> VideoBuffer {
     let mut buf = VIDEO_BUF_RECEIVER.lock()
                                     .unwrap()
                                     .as_ref()
@@ -374,7 +375,7 @@ pub fn get_buffer(_: MainThreadMarker<'_>, (width, height): (u32, u32)) -> Video
 }
 
 #[inline]
-pub fn get_audio_buffer(_: MainThreadMarker<'_>) -> AudioBuffer {
+pub fn get_audio_buffer(_: MainThreadMarker) -> AudioBuffer {
     AUDIO_BUF_RECEIVER.lock()
                       .unwrap()
                       .as_ref()
@@ -384,7 +385,7 @@ pub fn get_audio_buffer(_: MainThreadMarker<'_>) -> AudioBuffer {
 }
 
 #[inline]
-pub fn get_event(_: MainThreadMarker<'_>) -> Option<GameThreadEvent> {
+pub fn get_event(_: MainThreadMarker) -> Option<GameThreadEvent> {
     match GAME_THREAD_RECEIVER.lock()
                               .unwrap()
                               .as_ref()
@@ -398,7 +399,7 @@ pub fn get_event(_: MainThreadMarker<'_>) -> Option<GameThreadEvent> {
 }
 
 #[inline]
-pub fn get_event_block(_: MainThreadMarker<'_>) -> GameThreadEvent {
+pub fn get_event_block(_: MainThreadMarker) -> GameThreadEvent {
     GAME_THREAD_RECEIVER.lock()
                         .unwrap()
                         .as_ref()
@@ -407,8 +408,9 @@ pub fn get_event_block(_: MainThreadMarker<'_>) -> GameThreadEvent {
                         .unwrap()
 }
 
+// TODO: naming.
 #[inline]
-pub fn capture(_: MainThreadMarker<'_>, buf: VideoBuffer, times: usize) {
+pub fn capture(_: MainThreadMarker, buf: VideoBuffer, times: usize) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
@@ -418,7 +420,7 @@ pub fn capture(_: MainThreadMarker<'_>, buf: VideoBuffer, times: usize) {
 }
 
 #[inline]
-pub fn capture_audio(_: MainThreadMarker<'_>, buf: AudioBuffer) {
+pub fn capture_audio(_: MainThreadMarker, buf: AudioBuffer) {
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
                           .as_ref()
@@ -433,20 +435,22 @@ pub fn is_capturing() -> bool {
 }
 
 #[inline]
-pub fn get_capture_parameters(engine: &Engine) -> &CaptureParameters {
-    engine.data().capture_parameters.as_ref().unwrap()
+pub fn get_capture_parameters(marker: MainThreadMarker) -> Ref<'static, CaptureParameters> {
+    Ref::map(marker.globals(), |globals| {
+        globals.capture_parameters.as_ref().unwrap()
+    })
 }
 
-pub fn stop(engine: &mut Engine) {
+pub fn stop(marker: MainThreadMarker) {
     if !is_capturing() {
         return;
     }
 
-    hw::capture_remaining_sound(engine);
+    hw::capture_remaining_sound(marker);
 
     *CAPTURING.write().unwrap() = false;
-    engine.data_mut().fps_converter = None;
-    engine.data_mut().encoder_pixel_format = None;
+    marker.globals_mut().fps_converter = None;
+    marker.globals_mut().encoder_pixel_format = None;
 
     SEND_TO_CAPTURE_THREAD.lock()
                           .unwrap()
@@ -573,7 +577,7 @@ fn parse_encoder_parameters(engine: &mut Engine) -> Result<EncoderParameters> {
         audio_encoder_settings: to_string!(engine, cap_audio_encoder_settings),
         video_encoder_settings: to_string!(engine, cap_video_encoder_settings),
         vpx_threads: to_string!(engine, cap_vpx_threads),
-        video_resolution: hw::get_resolution(engine.marker().1),
+        video_resolution: hw::get_resolution(engine.marker()),
     })
 }
 
@@ -601,14 +605,15 @@ fn test_encoder(parameters: &EncoderParameters) -> Result<()> {
     Ok(())
 }
 
-command!(cap_start, |mut engine| {
+command!(cap_start, |marker| {
+    let engine = &mut *marker.engine_mut();
     if is_capturing() {
         engine.con_print("Already capturing, please stop the capturing with cap_stop \
                           before starting it again.\n");
         return;
     }
 
-    let parameters = match parse_encoder_parameters(&mut engine) {
+    let parameters = match parse_encoder_parameters(engine) {
         Ok(p) => p,
         Err(ref e) => {
             engine.con_print(&format_error(e));
@@ -616,7 +621,7 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    engine.data_mut().capture_parameters = match parse_capture_parameters(&mut engine) {
+    marker.globals_mut().capture_parameters = match parse_capture_parameters(engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
             engine.con_print(&format_error(e));
@@ -624,14 +629,14 @@ command!(cap_start, |mut engine| {
         }
     };
 
-    engine.data_mut().fps_converter = if engine.data()
-                                               .capture_parameters
-                                               .as_ref()
-                                               .unwrap()
-                                               .sampling_time_base
-                                               .is_some()
+    marker.globals_mut().fps_converter = if marker.globals()
+                                                  .capture_parameters
+                                                  .as_ref()
+                                                  .unwrap()
+                                                  .sampling_time_base
+                                                  .is_some()
     {
-        Some(FPSConverters::Sampling(SamplingConverter::new(&mut engine,
+        Some(FPSConverters::Sampling(SamplingConverter::new(marker,
                                                             parameters.time_base.into(),
                                                             parameters.video_resolution)))
     } else {
@@ -650,15 +655,16 @@ command!(cap_start, |mut engine| {
     // GAME_THREAD_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
     // AUDIO_PROFILER.with(|p| *p.borrow_mut() = Some(Profiler::new()));
 
-    hw::reset_sound_capture_remainder(&mut engine);
+    hw::reset_sound_capture_remainder(marker);
 });
 
-command!(cap_stop, |mut engine| {
-    stop(&mut engine);
+command!(cap_stop, |marker| {
+    stop(marker);
 });
 
-command!(cap_test, |mut engine| {
-    let parameters = match parse_encoder_parameters(&mut engine) {
+command!(cap_test, |marker| {
+    let engine = &mut *marker.engine_mut();
+    let parameters = match parse_encoder_parameters(engine) {
         Ok(p) => p,
         Err(ref e) => {
             engine.con_print(&format_error(e));
@@ -666,7 +672,7 @@ command!(cap_test, |mut engine| {
         }
     };
 
-    let _capture_parameters = match parse_capture_parameters(&mut engine) {
+    let _capture_parameters = match parse_capture_parameters(engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
             engine.con_print(&format_error(e));
@@ -681,7 +687,8 @@ command!(cap_test, |mut engine| {
     }
 });
 
-command!(cap_version, |engine| {
+command!(cap_version, |marker| {
+    let engine = marker.engine();
     engine.con_print(concat!(env!("CARGO_PKG_NAME"),
                              " v",
                              env!("CARGO_PKG_VERSION"),

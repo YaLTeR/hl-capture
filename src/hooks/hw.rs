@@ -21,7 +21,7 @@ use crate::command;
 use crate::cvar;
 use crate::dl;
 use crate::encode;
-use crate::engine::{Engine, MainThreadMarker};
+use crate::engine::MainThreadMarker;
 use crate::fps_converter::*;
 use crate::sdl;
 use crate::utils::MaybeUnavailable;
@@ -31,6 +31,7 @@ use crate::utils::format_error;
 type Result<T> = result::Result<T, Error>;
 
 // Stuff from these variables should ONLY be accessed from the main game thread.
+// TODO: move into MainThreadGlobals or something.
 static mut FUNCTIONS: Option<Functions> = None;
 static mut POINTERS: Option<Pointers> = None;
 
@@ -96,12 +97,12 @@ pub struct OclGlTexture {
 }
 
 pub enum FrameCapture {
-    OpenGL(fn(MainThreadMarker<'_>, (u32, u32), &mut [u8])),
+    OpenGL(fn(MainThreadMarker, (u32, u32), &mut [u8])),
     OpenCL(OclGlTexture),
 }
 
 impl OclGlTexture {
-    fn new(_: MainThreadMarker<'_>,
+    fn new(_: MainThreadMarker,
            texture: GLuint,
            queue: ocl::Queue,
            dims: ocl::SpatialDims)
@@ -211,11 +212,11 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                          launcherFactory: *mut c_void,
                                          filesystemFactory: *mut c_void)
                                          -> c_int {
-    let mut engine = Engine::new();
+    let marker = MainThreadMarker::new();
 
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
-    if let Err(e) = refresh_pointers(engine.marker().1).context("error refreshing pointers") {
+    if let Err(e) = refresh_pointers(marker).context("error refreshing pointers") {
         panic!("{}", &format_error(&e.into()));
     }
 
@@ -223,7 +224,7 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     encode::initialize();
 
     // Initialize the capturing.
-    capture::initialize(engine.marker().1);
+    capture::initialize(marker);
 
     let rv = real!(RunListenServer)(instance,
                                     basedir,
@@ -232,17 +233,18 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
                                     launcherFactory,
                                     filesystemFactory);
 
-    if let Some(FPSConverters::Sampling(mut sampling_conv)) = engine.data_mut().fps_converter.take()
+    if let Some(FPSConverters::Sampling(mut sampling_conv)) =
+        marker.globals_mut().fps_converter.take()
     {
-        sampling_conv.backup_and_free_ocl_data(&mut engine);
-        engine.data_mut().fps_converter = Some(FPSConverters::Sampling(sampling_conv));
+        sampling_conv.backup_and_free_ocl_data(marker);
+        marker.globals_mut().fps_converter = Some(FPSConverters::Sampling(sampling_conv));
     }
 
-    engine.data_mut().ocl_yuv_buffers.reset();
-    engine.data_mut().pro_que.reset();
+    marker.globals_mut().ocl_yuv_buffers.reset();
+    marker.globals_mut().pro_que.reset();
 
     // Since hw.so is getting unloaded, reset all pointers.
-    reset_pointers(engine.marker().1);
+    reset_pointers(marker);
 
     rv
 }
@@ -251,10 +253,13 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
 #[no_mangle]
 pub unsafe extern "C" fn CL_Disconnect() {
     if capture::is_capturing() && (*ptr!(cls)).demoplayback != 0 {
-        let mut engine = Engine::new();
+        let marker = MainThreadMarker::new();
 
-        if cap_playdemostop.parse(&mut engine).unwrap_or(0) != 0 {
-            capture::stop(&mut engine);
+        if cap_playdemostop.parse(&mut *marker.engine_mut())
+                           .unwrap_or(0)
+           != 0
+        {
+            capture::stop(marker);
         }
     }
 
@@ -264,10 +269,10 @@ pub unsafe extern "C" fn CL_Disconnect() {
 /// Handler for the `toggleconsole` command.
 #[no_mangle]
 pub unsafe extern "C" fn Con_ToggleConsole_f() {
-    let mut engine = Engine::new();
+    let marker = MainThreadMarker::new();
 
-    if !engine.data().inside_key_event
-       || cap_allow_tabbing_out_in_demos.parse(&mut engine)
+    if !marker.globals().inside_key_event
+       || cap_allow_tabbing_out_in_demos.parse(&mut *marker.engine_mut())
                                         .unwrap_or(0)
           == 0
     {
@@ -284,12 +289,12 @@ pub unsafe extern "C" fn GL_SetMode(mainwindow: c_int,
                                     pszDriver: *const c_char,
                                     pszCmdLine: *const c_char)
                                     -> c_int {
-    let mut engine = Engine::new();
-    engine.data_mut().inside_gl_setmode = true;
+    let marker = MainThreadMarker::new();
+    marker.globals_mut().inside_gl_setmode = true;
 
     let rv = real!(GL_SetMode)(mainwindow, pmaindc, pbaseRC, fD3D, pszDriver, pszCmdLine);
 
-    engine.data_mut().inside_gl_setmode = false;
+    marker.globals_mut().inside_gl_setmode = false;
 
     rv
 }
@@ -297,7 +302,7 @@ pub unsafe extern "C" fn GL_SetMode(mainwindow: c_int,
 /// Calculates the frame time and limits the FPS.
 #[no_mangle]
 pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
-    let engine = Engine::new();
+    let marker = MainThreadMarker::new();
 
     let old_realtime = *ptr!(realtime);
 
@@ -306,7 +311,7 @@ pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
     // TODO: this will NOT set the frametime on the first frame of capture / demo playback and WILL
     // set the frametime on the first frame of not capturing. This needs to be fixed somehow.
     if capture::is_capturing() && (*ptr!(cls)).demoplayback != 0 {
-        let params = capture::get_capture_parameters(&engine);
+        let params = capture::get_capture_parameters(marker);
         let frametime = params.sampling_time_base.unwrap_or(params.time_base).into();
 
         *ptr!(host_frametime) = frametime;
@@ -320,10 +325,10 @@ pub unsafe extern "C" fn Host_FilterTime(time: c_float) -> c_int {
 /// Handles key callbacks.
 #[no_mangle]
 pub unsafe extern "C" fn Key_Event(key: c_int, down: c_int) {
-    let mut engine = Engine::new();
-    engine.data_mut().inside_key_event = true;
+    let marker = MainThreadMarker::new();
+    marker.globals_mut().inside_key_event = true;
     real!(Key_Event)(key, down);
-    engine.data_mut().inside_key_event = false;
+    marker.globals_mut().inside_key_event = false;
 }
 
 /// Initializes the hunk memory.
@@ -334,8 +339,8 @@ pub unsafe extern "C" fn Key_Event(key: c_int, down: c_int) {
 pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
     real!(Memory_Init)(buf, size);
 
-    let mut engine = Engine::new();
-    register_cvars_and_commands(&mut engine);
+    let marker = MainThreadMarker::new();
+    register_cvars_and_commands(marker);
 
     gl::ReadPixels::load_with(|s| sdl::get_proc_address(s) as _);
     if !gl::ReadPixels::is_loaded() {
@@ -354,50 +359,48 @@ pub unsafe extern "C" fn Memory_Init(buf: *mut c_void, size: c_int) {
 /// Mixes sound into the output buffer using the paintbuffer.
 #[no_mangle]
 pub unsafe extern "C" fn S_PaintChannels(endtime: c_int) {
-    let mut engine = Engine::new();
+    let marker = MainThreadMarker::new();
 
     if !capture::is_capturing() {
-        engine.data_mut().capture_sound = false;
+        marker.globals_mut().capture_sound = false;
         real!(S_PaintChannels)(endtime);
         return;
     }
 
-    if engine.data().capture_sound {
+    if marker.globals().capture_sound {
         let paintedtime = *ptr!(paintedtime);
-        let frametime = match engine.data().sound_capture_mode {
+        let frametime = match marker.globals().sound_capture_mode {
             SoundCaptureMode::Normal => *ptr!(host_frametime),
-            SoundCaptureMode::Remaining => capture::get_capture_parameters(&engine).sound_extra,
+            SoundCaptureMode::Remaining => capture::get_capture_parameters(marker).sound_extra,
         };
         let speed = (**ptr!(shm)).speed;
-        let samples = frametime * f64::from(speed) + engine.data().sound_remainder;
-        let samples_rounded = match engine.data().sound_capture_mode {
+        let samples = frametime * f64::from(speed) + marker.globals().sound_remainder;
+        let samples_rounded = match marker.globals().sound_capture_mode {
             SoundCaptureMode::Normal => samples.floor(),
             SoundCaptureMode::Remaining => samples.ceil(),
         };
 
-        engine.data_mut().sound_remainder = samples - samples_rounded;
+        marker.globals_mut().sound_remainder = samples - samples_rounded;
 
         AUDIO_BUFFER.with(|b| {
-                        let mut buf = capture::get_audio_buffer(engine.marker().1);
+                        let mut buf = capture::get_audio_buffer(marker);
                         buf.data_mut().clear();
                         *b.borrow_mut() = Some(buf);
                     });
 
         real!(S_PaintChannels)(paintedtime + samples_rounded as i32);
 
-        AUDIO_BUFFER.with(|b| {
-                        capture::capture_audio(engine.marker().1, b.borrow_mut().take().unwrap())
-                    });
+        AUDIO_BUFFER.with(|b| capture::capture_audio(marker, b.borrow_mut().take().unwrap()));
 
-        engine.data_mut().capture_sound = false;
+        marker.globals_mut().capture_sound = false;
     }
 }
 
 /// Transfers the contents of the paintbuffer into the output buffer.
 #[no_mangle]
 pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
-    let engine = Engine::new();
-    if engine.data().capture_sound {
+    let marker = MainThreadMarker::new();
+    if marker.globals().capture_sound {
         AUDIO_BUFFER.with(|b| {
                         let mut buf = b.borrow_mut();
                         let buf = buf.as_mut().unwrap().data_mut();
@@ -405,9 +408,9 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
                         let paintedtime = *ptr!(paintedtime);
                         let paintbuffer = slice::from_raw_parts_mut(ptr!(paintbuffer), 1026);
 
-                        let engine = Engine::new();
+                        let marker = MainThreadMarker::new();
                         let volume =
-                            (capture::get_capture_parameters(&engine).volume * 256f32) as i32;
+                            (capture::get_capture_parameters(marker).volume * 256f32) as i32;
 
                         for sample in paintbuffer.iter().take((end - paintedtime) as usize * 2) {
                             // Clamping as done in Snd_WriteLinearBlastStereo16().
@@ -428,41 +431,42 @@ pub unsafe extern "C" fn S_TransferStereo16(end: c_int) {
 /// Flips the screen.
 #[export_name = "_Z18Sys_VID_FlipScreenv"]
 pub unsafe extern "C" fn Sys_VID_FlipScreen() {
-    let mut engine = Engine::new();
+    let marker = MainThreadMarker::new();
 
     // Print all messages that happened.
-    while let Some(e) = capture::get_event(engine.marker().1) {
+    while let Some(e) = capture::get_event(marker) {
         match e {
             GameThreadEvent::Message(msg) => con_print(&msg),
             GameThreadEvent::EncoderPixelFormat(fmt) => {
-                engine.data_mut().encoder_pixel_format = Some(fmt)
+                marker.globals_mut().encoder_pixel_format = Some(fmt)
             }
         }
     }
 
     // If the encoding just started, wait for the pixel format.
-    while capture::is_capturing() && engine.data().encoder_pixel_format.is_none() {
-        match capture::get_event_block(engine.marker().1) {
+    while capture::is_capturing() && marker.globals().encoder_pixel_format.is_none() {
+        match capture::get_event_block(marker) {
             GameThreadEvent::Message(msg) => con_print(&msg),
             GameThreadEvent::EncoderPixelFormat(fmt) => {
-                engine.data_mut().encoder_pixel_format = Some(fmt)
+                marker.globals_mut().encoder_pixel_format = Some(fmt)
             }
         }
     }
 
     if capture::is_capturing() {
         // Always capture sound.
-        engine.data_mut().capture_sound = true;
+        marker.globals_mut().capture_sound = true;
 
-        match engine.data_mut().fps_converter.take().unwrap() {
+        let converter = marker.globals_mut().fps_converter.take().unwrap();
+        match converter {
             FPSConverters::Simple(mut simple_conv) => {
-                simple_conv.time_passed(&mut engine, *ptr!(host_frametime), capture_frame);
-                engine.data_mut().fps_converter = Some(FPSConverters::Simple(simple_conv));
+                simple_conv.time_passed(marker, *ptr!(host_frametime), capture_frame);
+                marker.globals_mut().fps_converter = Some(FPSConverters::Simple(simple_conv));
             }
 
             FPSConverters::Sampling(mut sampling_conv) => {
-                sampling_conv.time_passed(&mut engine, *ptr!(host_frametime), capture_frame);
-                engine.data_mut().fps_converter = Some(FPSConverters::Sampling(sampling_conv));
+                sampling_conv.time_passed(marker, *ptr!(host_frametime), capture_frame);
+                marker.globals_mut().fps_converter = Some(FPSConverters::Sampling(sampling_conv));
             }
         }
     }
@@ -479,7 +483,7 @@ pub unsafe fn VideoMode_IsWindowed() -> c_int {
     // let engine = Engine::new();
     //
     // // Force FBO usage.
-    // if engine.data().inside_gl_setmode {
+    // if marker.globals().inside_gl_setmode {
     //     return 0;
     // }
 
@@ -487,7 +491,7 @@ pub unsafe fn VideoMode_IsWindowed() -> c_int {
 }
 
 /// Obtains and stores all necessary function and variable addresses.
-fn refresh_pointers(_: MainThreadMarker<'_>) -> Result<()> {
+fn refresh_pointers(_: MainThreadMarker) -> Result<()> {
     let hw = dl::open("hw.so", RTLD_NOW | RTLD_NOLOAD).context("couldn't load hw.so")?;
 
     unsafe {
@@ -531,7 +535,7 @@ fn refresh_pointers(_: MainThreadMarker<'_>) -> Result<()> {
 
 /// Resets all pointers to their default values.
 #[inline]
-fn reset_pointers(_: MainThreadMarker<'_>) {
+fn reset_pointers(_: MainThreadMarker) {
     unsafe {
         FUNCTIONS = None;
         POINTERS = None;
@@ -539,13 +543,14 @@ fn reset_pointers(_: MainThreadMarker<'_>) {
 }
 
 /// Registers console commands and variables.
-fn register_cvars_and_commands(engine: &mut Engine) {
+fn register_cvars_and_commands(marker: MainThreadMarker) {
     for cmd in &command::COMMANDS {
         unsafe {
             register_command(cmd.name(), cmd.callback());
         }
     }
 
+    let engine = &mut *marker.engine_mut();
     for cvar in &cvar::CVARS {
         if let Err(e) = cvar.register(engine)
                             .context("error registering a console variable")
@@ -608,7 +613,7 @@ pub unsafe fn cmd_argv(index: u32) -> String {
 }
 
 /// Returns the current game resolution.
-pub fn get_resolution(_: MainThreadMarker<'_>) -> (u32, u32) {
+pub fn get_resolution(_: MainThreadMarker) -> (u32, u32) {
     let mut width;
     let mut height;
 
@@ -632,54 +637,57 @@ pub fn get_resolution(_: MainThreadMarker<'_>) -> (u32, u32) {
 
 /// Resets the sound capture remainder.
 #[inline]
-pub fn reset_sound_capture_remainder(engine: &mut Engine) {
-    engine.data_mut().sound_remainder = 0f64;
+pub fn reset_sound_capture_remainder(marker: MainThreadMarker) {
+    marker.globals_mut().sound_remainder = 0f64;
 }
 
 /// Captures the remaining and extra sound.
 #[inline]
-pub fn capture_remaining_sound(engine: &mut Engine) {
-    engine.data_mut().sound_capture_mode = SoundCaptureMode::Remaining;
-    engine.data_mut().capture_sound = true;
+pub fn capture_remaining_sound(marker: MainThreadMarker) {
+    marker.globals_mut().sound_capture_mode = SoundCaptureMode::Remaining;
+    marker.globals_mut().capture_sound = true;
     unsafe {
         S_PaintChannels(0);
     }
-    engine.data_mut().sound_capture_mode = SoundCaptureMode::Normal;
+    marker.globals_mut().sound_capture_mode = SoundCaptureMode::Normal;
 }
 
-/// Returns the ocl `ProCue`.
-pub fn get_pro_que(engine: &mut Engine) -> Option<&mut ocl::ProQue> {
-    if engine.data().pro_que.is_not_checked() {
-        let context = ocl::Context::builder().gl_context(get_opengl_context(engine.marker().1))
+/// Returns the ocl `ProCue` after potentially initializing it.
+pub fn get_pro_que(marker: MainThreadMarker,
+                   pro_que: &mut MaybeUnavailable<ocl::ProQue>)
+                   -> Option<&mut ocl::ProQue> {
+    if pro_que.is_not_checked() {
+        let context = ocl::Context::builder().gl_context(get_opengl_context(marker))
                                              .glx_display(unsafe { glx::GetCurrentDisplay() } as _)
                                              .build()
                                              .context("error building ocl::Context");
 
-        let pro_que = context.and_then(|ctx| {
-                                 ocl::ProQue::builder().context(ctx)
-                                                       .prog_bldr({
-                                                           let mut builder =
-                                                               ocl::Program::builder();
-                                                           builder
+        let new_pro_que = context.and_then(|ctx| {
+                                     ocl::ProQue::builder().context(ctx)
+                                                           .prog_bldr({
+                                                               let mut builder =
+                                                                   ocl::Program::builder();
+                                                               builder
                             .src(include_str!("../../cl_src/color_conversion.cl"))
                             .src(include_str!("../../cl_src/sampling.cl"));
-                                                           builder
-                                                       })
-                                                       .build()
-                                                       .context("error building ocl::ProQue")
-                             })
-                             .map_err(|e| {
-                                 engine.con_print(&format!("Could not initialize OpenCL, \
-                                                            proceeding without it. \
-                                                            Error details:\n{}",
-                                                           e).replace('\0', "\\x00"));
-                             })
-                             .ok();
+                                                               builder
+                                                           })
+                                                           .build()
+                                                           .context("error building ocl::ProQue")
+                                 })
+                                 .map_err(|e| {
+                                     marker.engine()
+                                           .con_print(&format!("Could not initialize OpenCL, \
+                                                                proceeding without it. \
+                                                                Error details:\n{}",
+                                                               e).replace('\0', "\\x00"));
+                                 })
+                                 .ok();
 
-        engine.data_mut().pro_que = MaybeUnavailable::from_check_result(pro_que);
+        *pro_que = MaybeUnavailable::from_check_result(new_pro_que);
     }
 
-    engine.data_mut().pro_que.as_mut().available()
+    pro_que.as_mut().available()
 }
 
 /// Builds an ocl `Buffer` with the specified length.
@@ -722,54 +730,44 @@ fn build_yuv_buffers(pro_que: &ocl::ProQue,
     }
 }
 
-/// Returns the ocl buffers for Y, U and V, (HACK:) as well as a `ProQue`.
-fn get_yuv_buffers_and_pro_que(
-    engine: &mut Engine,
+/// Returns the ocl buffers for Y, U and V after potentially (re-)creating them.
+fn get_yuv_buffers<'yuv_buffers>(
+    pro_que: &ocl::ProQue,
+    ocl_yuv_buffers: &'yuv_buffers mut MaybeUnavailable<(ocl::Buffer<u8>,
+                                        ocl::Buffer<u8>,
+                                        ocl::Buffer<u8>)>,
     (Y_len, U_len, V_len): (usize, usize, usize))
-    -> Option<(&mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>), &ocl::ProQue)> {
-    if engine.data().ocl_yuv_buffers.is_not_checked() {
-        let buffers = build_yuv_buffers(get_pro_que(engine).unwrap(), (Y_len, U_len, V_len));
-        engine.data_mut().ocl_yuv_buffers = MaybeUnavailable::from_check_result(buffers);
+    -> Option<&'yuv_buffers mut (ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)> {
+    // If the buffers don't exist just create them.
+    if !ocl_yuv_buffers.is_available() {
+        let buffers = build_yuv_buffers(pro_que, (Y_len, U_len, V_len));
+        *ocl_yuv_buffers = MaybeUnavailable::from_check_result(buffers);
+        return ocl_yuv_buffers.as_mut().available();
     }
 
-    // Verify the buffer sizes.
-    match engine.data_mut().ocl_yuv_buffers.take() {
-        Some((Y_buf, U_buf, V_buf)) => {
-            // Check if the requested buffer size is different.
-            // In most cases if one of the buffer sizes changes, the other do as well.
-            if Y_buf.len() != Y_len || U_buf.len() != U_len || V_buf.len() != V_len {
-                // First drop the existing buffers.
-                drop(Y_buf);
-                drop(U_buf);
-                drop(V_buf);
+    // Check if the requested buffer size is different.
+    // In most cases if one of the buffer sizes changes, the other do as well.
+    let (Y_buf, U_buf, V_buf) = ocl_yuv_buffers.as_mut().unwrap();
 
-                // Now allocate new ones.
-                let buffers =
-                    build_yuv_buffers(get_pro_que(engine).unwrap(), (Y_len, U_len, V_len));
-                engine.data_mut().ocl_yuv_buffers = MaybeUnavailable::from_check_result(buffers);
-            } else {
-                engine.data_mut().ocl_yuv_buffers =
-                    MaybeUnavailable::Available((Y_buf, U_buf, V_buf));
-            }
+    if Y_buf.len() != Y_len || U_buf.len() != U_len || V_buf.len() != V_len {
+        // First drop the existing buffers.
+        drop(ocl_yuv_buffers.take());
 
-            let data = engine.data_mut();
-            let pro_que = &data.pro_que;
-            data.ocl_yuv_buffers
-                .as_mut()
-                .available()
-                .map(|buffers| (buffers, pro_que.as_ref().unwrap()))
-        }
-        None => None,
+        // Now allocate new ones.
+        let buffers = build_yuv_buffers(pro_que, (Y_len, U_len, V_len));
+        *ocl_yuv_buffers = MaybeUnavailable::from_check_result(buffers);
     }
+
+    ocl_yuv_buffers.as_mut().available()
 }
 
 /// Captures and returns the current frame.
-fn capture_frame(engine: &mut Engine) -> FrameCapture {
-    let (engine, marker) = engine.marker_mut();
-
+fn capture_frame(marker: MainThreadMarker) -> FrameCapture {
     let texture = unsafe { *ptr!(s_BackBufferFBO) }.Tex;
+
+    let pro_que = &mut marker.globals_mut().pro_que;
     let pro_que = if texture != 0 {
-        get_pro_que(engine)
+        get_pro_que(marker, pro_que)
     } else {
         None
     };
@@ -796,20 +794,21 @@ fn ocl_color_conversion_func_name(target: format::Pixel) -> Option<&'static str>
 }
 
 /// Reads the given `ocl::Image` into the buffer.
-pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &mut Engine,
+pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(marker: MainThreadMarker,
                                                image: &ocl::Image<T>,
                                                buf: &mut capture::VideoBuffer) {
-    let encoder_pixel_format = engine.data().encoder_pixel_format.unwrap();
+    let globals = &mut *marker.globals_mut();
+    let pro_que = get_pro_que(marker, &mut globals.pro_que).unwrap();
+    let encoder_pixel_format = globals.encoder_pixel_format.unwrap();
 
     if let Some(func_name) = ocl_color_conversion_func_name(encoder_pixel_format) {
         buf.set_format(encoder_pixel_format);
         let frame = buf.get_frame();
 
-        if let Some((&mut (ref Y_buf, ref U_buf, ref V_buf), pro_que)) =
-            get_yuv_buffers_and_pro_que(engine,
-                                        (frame.data(0).len(),
-                                         frame.data(1).len(),
-                                         frame.data(2).len()))
+        if let Some(&mut (ref Y_buf, ref U_buf, ref V_buf)) =
+            get_yuv_buffers(pro_que,
+                            &mut globals.ocl_yuv_buffers,
+                            (frame.data(0).len(), frame.data(1).len(), frame.data(2).len()))
         {
             let kernel = pro_que.kernel_builder(func_name)
                                 .global_work_size(image.dims())
@@ -837,8 +836,6 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &mut Engine,
 
     buf.set_format(format::Pixel::RGBA);
 
-    let pro_que = get_pro_que(engine).unwrap();
-
     let ocl_buffer =
         build_ocl_buffer(pro_que, buf.as_mut_slice().len()).expect("OpenCL buffer build");
 
@@ -859,7 +856,7 @@ pub fn read_ocl_image_into_buf<T: ocl::OclPrm>(engine: &mut Engine,
 }
 
 /// Reads pixels into the buffer.
-fn read_pixels(_: MainThreadMarker<'_>, (w, h): (u32, u32), buf: &mut [u8]) {
+fn read_pixels(_: MainThreadMarker, (w, h): (u32, u32), buf: &mut [u8]) {
     unsafe {
         // Our buffer expects 1-byte alignment.
         gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
@@ -876,7 +873,7 @@ fn read_pixels(_: MainThreadMarker<'_>, (w, h): (u32, u32), buf: &mut [u8]) {
 }
 
 /// Retrieves the current OpenGL context.
-fn get_opengl_context(_: MainThreadMarker<'_>) -> *mut c_void {
+fn get_opengl_context(_: MainThreadMarker) -> *mut c_void {
     unsafe { (**ptr!(game)).m_hSDLGLContext }
 }
 

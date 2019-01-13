@@ -74,15 +74,15 @@ impl<T> MaybeUnavailable<T> {
         }
     }
 
-    /// Converts from `MaybeUnavailable<T>` to `MaybeUnavailable<&T>`.
-    #[inline]
-    pub fn as_ref(&self) -> MaybeUnavailable<&T> {
-        match *self {
-            MaybeUnavailable::NotChecked => MaybeUnavailable::NotChecked,
-            MaybeUnavailable::Unavailable => MaybeUnavailable::Unavailable,
-            MaybeUnavailable::Available(ref x) => MaybeUnavailable::Available(x),
-        }
-    }
+    // /// Converts from `MaybeUnavailable<T>` to `MaybeUnavailable<&T>`.
+    // #[inline]
+    // pub fn as_ref(&self) -> MaybeUnavailable<&T> {
+    //     match *self {
+    //         MaybeUnavailable::NotChecked => MaybeUnavailable::NotChecked,
+    //         MaybeUnavailable::Unavailable => MaybeUnavailable::Unavailable,
+    //         MaybeUnavailable::Available(ref x) => MaybeUnavailable::Available(x),
+    //     }
+    // }
 
     /// Converts from `MaybeUnavailable<T>` to `MaybeUnavailable<&mut T>`.
     #[inline]

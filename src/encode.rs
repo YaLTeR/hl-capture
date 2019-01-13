@@ -607,7 +607,8 @@ fn audio_encoder_info(buf: &mut String) {
     }
 }
 
-command!(cap_video_encoder, |engine| {
+command!(cap_video_encoder, |marker| {
+    let engine = marker.engine();
     let mut args = engine.args();
 
     if args.len() != 2 {
@@ -644,7 +645,8 @@ command!(cap_video_encoder, |engine| {
     }
 });
 
-command!(cap_audio_encoder, |engine| {
+command!(cap_audio_encoder, |marker| {
+    let engine = marker.engine();
     let mut args = engine.args();
 
     if args.len() != 2 {

@@ -1,5 +1,6 @@
 use failure::{bail, ensure, Error};
 use ocl;
+use std::cell::{Ref, RefMut};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::result;
@@ -7,26 +8,17 @@ use std::result;
 use crate::command;
 use crate::cvar::{cvar_t, CVar};
 use crate::hooks::hw;
-use crate::utils::MaybeUnavailable;
+use crate::utils::{MaybeUnavailable, RacyRefCell};
 
 type Result<T> = result::Result<T, Error>;
 
-static mut MAIN_THREAD_DATA: MainThreadDataContainer =
-    MainThreadDataContainer { data: MainThreadData { capture_parameters: None,
-                                                     capture_sound: false,
-                                                     sound_remainder: 0f64,
-                                                     sound_capture_mode:
-                                                         crate::hooks::hw::SoundCaptureMode::Normal,
-                                                     inside_key_event: false,
-                                                     inside_gl_setmode: false,
-                                                     fps_converter: None,
-                                                     encoder_pixel_format: None,
-                                                     pro_que: MaybeUnavailable::NotChecked,
-                                                     ocl_yuv_buffers:
-                                                         MaybeUnavailable::NotChecked } };
+/// The `Engine` instance.
+static ENGINE: RacyRefCell<Engine> = RacyRefCell::new(unsafe { Engine::new() });
+/// The `MainThreadGlobals` instance.
+static GLOBALS: RacyRefCell<MainThreadGlobals> = RacyRefCell::new(MainThreadGlobals::new());
 
 /// Global variables accessible from the main game thread.
-pub struct MainThreadData {
+pub struct MainThreadGlobals {
     pub capture_parameters: Option<crate::capture::CaptureParameters>,
     pub capture_sound: bool,
     pub sound_remainder: f64,
@@ -39,25 +31,77 @@ pub struct MainThreadData {
     pub ocl_yuv_buffers: MaybeUnavailable<(ocl::Buffer<u8>, ocl::Buffer<u8>, ocl::Buffer<u8>)>,
 }
 
-/// A Send+Sync container to allow putting `MainThreadData` into a global variable.
-struct MainThreadDataContainer {
-    data: MainThreadData,
+impl MainThreadGlobals {
+    /// Returns new `MainThreadGlobals`.
+    #[inline]
+    const fn new() -> Self {
+        Self { capture_parameters: None,
+               capture_sound: false,
+               sound_remainder: 0f64,
+               sound_capture_mode: crate::hooks::hw::SoundCaptureMode::Normal,
+               inside_key_event: false,
+               inside_gl_setmode: false,
+               fps_converter: None,
+               encoder_pixel_format: None,
+               pro_que: MaybeUnavailable::NotChecked,
+               ocl_yuv_buffers: MaybeUnavailable::NotChecked }
+    }
 }
 
-unsafe impl Send for MainThreadDataContainer {}
-unsafe impl Sync for MainThreadDataContainer {}
+/// This marker serves as a static guarantee of being on the main game thread. Functions that
+/// should only be called from the main game thread should accept an argument of this type.
+#[derive(Clone, Copy)]
+pub struct MainThreadMarker {
+    // Mark as !Send and !Sync.
+    _marker: PhantomData<*const ()>,
+}
 
-/// A "container" for unsafe engine functions.
+impl MainThreadMarker {
+    /// Creates a new `MainThreadMarker`.
+    ///
+    /// # Safety
+    /// This should only be called from the main game thread.
+    #[inline]
+    pub unsafe fn new() -> Self {
+        Self { _marker: PhantomData }
+    }
+
+    /// Returns an immutable reference to `Engine`.
+    #[inline]
+    pub fn engine(self) -> Ref<'static, Engine> {
+        // We know we're on the main thread because we accept self which is a MainThreadMarker.
+        unsafe { ENGINE.borrow() }
+    }
+
+    /// Returns a mutable reference to `Engine`.
+    #[inline]
+    pub fn engine_mut(self) -> RefMut<'static, Engine> {
+        // We know we're on the main thread because we accept self which is a MainThreadMarker.
+        unsafe { ENGINE.borrow_mut() }
+    }
+
+    /// Returns an immutable reference to `MainThreadGlobals`.
+    #[inline]
+    pub fn globals(self) -> Ref<'static, MainThreadGlobals> {
+        // We know we're on the main thread because we accept self which is a MainThreadMarker.
+        unsafe { GLOBALS.borrow() }
+    }
+
+    /// Returns a mutable reference to `MainThreadGlobals`.
+    #[inline]
+    pub fn globals_mut(self) -> RefMut<'static, MainThreadGlobals> {
+        // We know we're on the main thread because we accept self which is a MainThreadMarker.
+        unsafe { GLOBALS.borrow_mut() }
+    }
+}
+
+/// Struct exposing a safe interface to the engine functions.
 ///
-/// It's used for exposing safe interfaces for these functions where they can be used safely
-/// (for example, in console command handlers). Engine also serves as a static guarantee of being
-/// in the main game thread.
-// Don't implement Clone/Copy, this will break EngineCVarGuard static guarantee.
+/// There must be only one instance of `Engine` because it also controls access to `CVar`s.
+// Not Clone, otherwise the CVar guard can be broken.
 pub struct Engine {
-    /// This field serves two purposes:
-    /// firstly, it prevents creating the struct not via the unsafe new() method,
-    /// and secondly, it marks the struct as !Send and !Sync.
-    _private: PhantomData<*const ()>,
+    // Mark as !Send and !Sync.
+    _marker: PhantomData<*const ()>,
 }
 
 /// A guard for statically ensuring that no engine functions are called
@@ -67,46 +111,22 @@ pub struct EngineCVarGuard<'a> {
     _borrow_guard: &'a mut Engine,
 }
 
-/// A static guarantee of being in the main game thread, separate from `Engine` to allow borrowing.
-#[derive(Clone, Copy)]
-pub struct MainThreadMarker<'engine> {
-    // Same purpose as in Engine.
-    _private: PhantomData<*const ()>,
-    _private_2: PhantomData<&'engine ()>,
-}
-
 impl Engine {
-    /// Creates an instance of Engine.
+    /// Creates an `Engine` instance.
     ///
     /// # Safety
-    /// Unsafe because this function should only be called from the main game thread.
-    #[inline]
-    pub unsafe fn new() -> Self {
-        Engine { _private: PhantomData }
+    /// Must be called only once from the main game thread to initialize a `static` variable.
+    const unsafe fn new() -> Self {
+        Self { _marker: PhantomData }
     }
 
-    /// Splits off a `MainThreadMarker`.
+    /// Returns a `MainThreadMarker`.
+    ///
+    /// Convenience function for not having to pass both the marker and the engine in some cases.
     #[inline]
-    pub fn marker(&self) -> (&Self, MainThreadMarker<'_>) {
-        (self, unsafe { MainThreadMarker::new() })
-    }
-
-    /// Splits off a `MainThreadMarker` from a mutable reference.
-    #[inline]
-    pub fn marker_mut(&mut self) -> (&mut Self, MainThreadMarker<'_>) {
-        (self, unsafe { MainThreadMarker::new() })
-    }
-
-    /// Returns a reference to the main thread global variables.
-    #[inline]
-    pub fn data(&self) -> &MainThreadData {
-        unsafe { &MAIN_THREAD_DATA.data }
-    }
-
-    /// Returns a mutable reference to the main thread global variables.
-    #[inline]
-    pub fn data_mut(&mut self) -> &mut MainThreadData {
-        unsafe { &mut MAIN_THREAD_DATA.data }
+    pub fn marker(&self) -> MainThreadMarker {
+        // We accept the engine by `&self`, which means we're on the main thread.
+        unsafe { MainThreadMarker::new() }
     }
 
     /// Returns an iterator over the console command arguments.
@@ -134,6 +154,7 @@ impl Engine {
     }
 
     /// Registers the given console variable.
+    // TODO: verify the soundness and interface here. Perhaps accept a cvar_t?
     #[inline]
     pub fn register_variable(&mut self, cvar: &CVar) -> Result<()> {
         let mut engine_cvar = self.get_engine_cvar(cvar);
@@ -175,10 +196,56 @@ impl DerefMut for EngineCVarGuard<'_> {
     }
 }
 
-impl MainThreadMarker<'_> {
-    #[inline]
-    unsafe fn new() -> Self {
-        Self { _private: PhantomData,
-               _private_2: PhantomData }
-    }
-}
+// fn main_thread_func(_: MainThreadMarker) {}
+// fn main_thread_func_with_two_args(_: MainThreadMarker, _a: &mut bool, _b: &mut bool) {}
+//
+// fn test_partial_borrowing(marker: MainThreadMarker) {
+//     // Invoking DerefMut is needed to be able to utilize partial borrows.
+//     let globals = &mut *marker.globals();
+//
+//     let a = &mut globals.capture_sound;
+//     let b = &mut globals.inside_gl_setmode;
+//     main_thread_func_with_two_args(marker, a, b);
+// }
+//
+// fn test_call_functions(marker: MainThreadMarker) {
+//     marker.engine().con_print("Hello");
+//     main_thread_func(marker);
+//     marker.globals().capture_sound = true;
+//
+//     let engine = marker.engine();
+//     for a in engine.args() {
+//         engine.con_print("Arg");
+//
+//         // If this attempts to get a mutable `Engine` reference, it will panic since we are holding
+//         // an immutable reference.
+//         main_thread_func(marker);
+//         marker.globals().capture_sound = true;
+//     }
+// }
+//
+// fn test_cvar_guard(marker: MainThreadMarker) {
+//     let engine = marker.engine_mut();
+//     let cvar = engine.get_engine_cvar(&crate::capture::cap_fps);
+//
+//     // Error: can't call engine functions with active cvar references.
+//     // engine.con_print("Hi");
+//
+//     // Can call other main thread funcs.
+//     main_thread_func(marker);
+//     // Can modify global variables.
+//     marker.globals_mut().capture_sound = true;
+// }
+//
+// fn requires_send<T: Send>(_: T) {}
+// fn requires_sync<T: Sync>(_: T) {}
+
+// fn check_autotraits(marker: MainThreadMarker) {
+//     // Should not compile.
+//     requires_send(marker);
+//     requires_sync(marker);
+//
+//     let engine = &mut *marker.engine();
+//     requires_send(engine);
+//     requires_sync(engine);
+// }

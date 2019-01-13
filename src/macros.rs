@@ -35,12 +35,12 @@ macro_rules! command {
         impl $name {
             // This will get called by the engine, in main game thread.
             unsafe extern "C" fn callback() {
-                const F: &Fn(crate::engine::Engine) = &$callback;
+                const F: &Fn(crate::engine::MainThreadMarker) = &$callback;
 
                 // We know this is the main game thread.
-                let engine = crate::engine::Engine::new();
+                let marker = crate::engine::MainThreadMarker::new();
 
-                F(engine);
+                F(marker);
             }
         }
 
