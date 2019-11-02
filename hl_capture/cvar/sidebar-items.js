@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["EMPTY_CVAR_T",""]],"static":[["CVARS",""]],"struct":[["CVar","Safe wrapper for the engine `CVar` type."],["cvar_t","The engine `CVar` type."]],"type":[["Result",""]]});

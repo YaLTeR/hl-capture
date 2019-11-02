@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["MaybeUnavailable","Represents a value that is not checked at first, and upon being checked it might be available or unavailable."]]});

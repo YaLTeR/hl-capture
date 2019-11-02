@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["COMMANDS",""]],"struct":[["Args","An iterator over the console command arguments."]],"trait":[["Command",""]]});

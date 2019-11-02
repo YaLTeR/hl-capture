@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["SimpleConverter","Simple FPS converter which drops and duplicates frames to get constant FPS output."]]});
