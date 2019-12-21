@@ -558,7 +558,7 @@ pub fn initialize() {
 
     INIT.call_once(|| {
             if let Err(e) = ffmpeg::init().context("error initializing ffmpeg") {
-                panic!("{}", format_error(&e.into()));
+                panic!("{}", format_error(&e));
             }
 
             *VIDEO_ENCODER.lock().unwrap() =

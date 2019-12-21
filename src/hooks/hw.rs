@@ -217,7 +217,7 @@ pub unsafe extern "C" fn RunListenServer(instance: *mut c_void,
     // hw.so just loaded, either for the first time or potentially at a different address.
     // Refresh all pointers.
     if let Err(e) = refresh_pointers(marker).context("error refreshing pointers") {
-        panic!("{}", &format_error(&e.into()));
+        panic!("{}", &format_error(&e));
     }
 
     // Initialize the encoding.
@@ -555,7 +555,7 @@ fn register_cvars_and_commands(marker: MainThreadMarker) {
         if let Err(e) = cvar.register(engine)
                             .context("error registering a console variable")
         {
-            panic!("{}", format_error(&e.into()));
+            panic!("{}", format_error(&e));
         }
     }
 }
@@ -680,7 +680,7 @@ pub fn get_pro_que(marker: MainThreadMarker,
                                            .con_print(&format!("Could not initialize OpenCL, \
                                                                 proceeding without it. \
                                                                 Error details:\n{}",
-                                                               e).replace('\0', "\\x00"));
+                                                               format_error(&e)).replace('\0', "\\x00"));
                                  })
                                  .ok();
 

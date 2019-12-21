@@ -250,7 +250,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                               *CAPTURING.write().unwrap() = false;
                               drop_frames = true;
 
-                              event_sender.send(GameThreadEvent::Message(format_error(&e.into())))
+                              event_sender.send(GameThreadEvent::Message(format_error(&e)))
                                           .unwrap();
                           })
                           .ok();
@@ -274,7 +274,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 }
 
                 if let Err(e) = encode(&mut encoder, buffer, times, &mut frame) {
-                    event_sender.send(GameThreadEvent::Message(format_error(&e)))
+                    event_sender.send(GameThreadEvent::Message(format_error(e.as_fail())))
                                 .unwrap();
 
                     *CAPTURING.write().unwrap() = false;
@@ -296,7 +296,7 @@ fn capture_thread(video_buf_sender: &Sender<VideoBuffer>,
                 drop(buffer);
 
                 if let Err(e) = result {
-                    event_sender.send(GameThreadEvent::Message(format_error(&e)))
+                    event_sender.send(GameThreadEvent::Message(format_error(e.as_fail())))
                                 .unwrap();
 
                     *CAPTURING.write().unwrap() = false;
@@ -335,7 +335,7 @@ fn encode(encoder: &mut Option<Encoder>,
 fn stop_encoder(encoder: Option<Encoder>, event_sender: &Sender<GameThreadEvent>) {
     if let Some(mut encoder) = encoder {
         if let Err(e) = encoder.finish() {
-            event_sender.send(GameThreadEvent::Message(format_error(&e)))
+            event_sender.send(GameThreadEvent::Message(format_error(e.as_fail())))
                         .unwrap();
         }
 
@@ -616,7 +616,7 @@ command!(cap_start, |marker| {
     let parameters = match parse_encoder_parameters(engine) {
         Ok(p) => p,
         Err(ref e) => {
-            engine.con_print(&format_error(e));
+            engine.con_print(&format_error(e.as_fail()));
             return;
         }
     };
@@ -624,7 +624,7 @@ command!(cap_start, |marker| {
     marker.globals_mut().capture_parameters = match parse_capture_parameters(engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
-            engine.con_print(&format_error(e));
+            engine.con_print(&format_error(e.as_fail()));
             return;
         }
     };
@@ -667,7 +667,7 @@ command!(cap_test, |marker| {
     let parameters = match parse_encoder_parameters(engine) {
         Ok(p) => p,
         Err(ref e) => {
-            engine.con_print(&format_error(e));
+            engine.con_print(&format_error(e.as_fail()));
             return;
         }
     };
@@ -675,13 +675,13 @@ command!(cap_test, |marker| {
     let _capture_parameters = match parse_capture_parameters(engine) {
         Ok(p) => Some(p),
         Err(ref e) => {
-            engine.con_print(&format_error(e));
+            engine.con_print(&format_error(e.as_fail()));
             return;
         }
     };
 
     if let Err(ref e) = test_encoder(&parameters) {
-        engine.con_print(&format_error(e));
+        engine.con_print(&format_error(e.as_fail()));
     } else {
         engine.con_print("Capture was started and stopped successfully.\n");
     }

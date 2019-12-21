@@ -30,13 +30,13 @@ rev = "44d959888d3480ea2a1203544370a424a4c40364"
 default-features = false
 features = ["codec", "format", "software-resampling", "software-scaling"]
 
-[replace."ffmpeg-sys:3.4.1" ]
-git = "https://github.com/YaLTeR/rust-ffmpeg-sys.git"
-rev = "ae19ee2006eca4c99cb05f54e8156b8f98c96c51"
-
 [dependencies.sdl2-sys]
 version = "0.31"
 features = ["use-pkgconfig"]
+
+[replace."ffmpeg-sys:3.4.1"]
+git = "https://github.com/YaLTeR/rust-ffmpeg-sys.git"
+rev = "ae19ee2006eca4c99cb05f54e8156b8f98c96c51"
 
 [build-dependencies]
 syn = { version = "0.14", features = ["full", "visit"] }
