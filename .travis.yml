@@ -1,9 +1,7 @@
 sudo: false
 language: rust
 rust:
-- stable
-- beta
-- nightly
+- 1.38.0 # rust-ffmpeg-sys supports up to this.
 matrix:
   allow_failures:
   - rust: nightly
