@@ -25,10 +25,27 @@ Check the [wiki](https://github.com/YaLTeR/hl-capture/wiki/Installation-and-usag
 - Compatibility with TASes, including those utilizing engine restarts and RNG manipulation.
 
 ## Building
-1. Get stable Rust, then do `rustup target add i686-unknown-linux-gnu`
+1. Get Rust 1.38.0 with the `i686-unknown-linux-gnu` target.
+    - This can be done using rustup with:
+      ```
+      rustup toolchain add 1.38.0
+      rustup run 1.38.0 rustup target add i686-unknown-linux-gnu
+      ```
+    - Rust 1.38.0 is used due to building issues with the `ffmpeg` crate which, unfortunately, went unmaintained several years ago.
 2. Install **32-bit** FFMpeg libraries. FFMpeg **3.4** is known to work; FFMpeg 4 will not work.
+    - Use the following commands for a minimal build of FFMpeg known to work for building hl-capture:
+      ```
+      git clone --depth=1 --branch=release/3.4 https://github.com/FFMpeg/FFMpeg.git ffmpeg
+      cd ffmpeg
+      ./configure --disable-programs --disable-doc --enable-cross-compile --arch=x86_32 --target_os=linux --prefix="$PWD/install" --cc="gcc -m32" --disable-static --enable-shared
+      make && make install
+      ```
 3. Install **32-bit** SDL2.
 4. Install **32-bit** OpenCL.
-5. `PKG_CONFIG_ALLOW_CROSS=1 cargo build --release`
+5. `PKG_CONFIG_ALLOW_CROSS=1 cargo +1.38.0 build --release`
+    - If you built FFMpeg manually, use the following command:
+      ```
+      PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_PATH=/path/to/ffmpeg/install/lib/pkgconfig LD_LIBRARY_PATH=/path/to/ffmpeg/install/lib cargo +1.38.0 build --release
+      ```
 
 Look at how the Travis build is set up for minimal build of the dependencies.
