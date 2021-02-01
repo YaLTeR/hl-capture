@@ -4,6 +4,8 @@
 
 [Internal rustdoc](https://yalter.github.io/hl-capture)
 
+**hl-capture is deprecated. [bxt-rs](https://github.com/YaLTeR/bxt-rs) provides new video recording tools which use Vulkan and support Windows.**
+
 hl-capture is a tool for recording Half-Life videos on Linux, written in Rust. It's similar to [Half-Life Advanced Effects](http://www.advancedfx.org/), but focuses on video capturing rather than advanced movie-making functionality.
 
 hl-capture is designed to be **fast** and **convenient**. Video and sound are encoded with [FFMpeg](http://ffmpeg.org/) right away into any desirable format like `mp4`, `mkv` or `webm`. This, together with utilizing multiple threads and GPU-accelerated processing, makes hl-capture way faster than HLAE or Source's startmovie.
